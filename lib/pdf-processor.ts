@@ -1,4 +1,4 @@
-import * as XLSX from "xlsx"
+// This module is client-side only - all browser APIs are guarded
 
 interface BatchData {
   batchNumber: string
@@ -15,10 +15,19 @@ interface BatchData {
   strMax: number
 }
 
+// Guard for client-side only execution
+function isClient(): boolean {
+  return typeof window !== "undefined"
+}
+
 // Load PDF.js from CDN using legacy UMD build
 let pdfjsLibPromise: Promise<any> | null = null
 
 function loadPdfJs(): Promise<any> {
+  if (!isClient()) {
+    return Promise.reject(new Error("PDF.js can only be loaded on the client side"))
+  }
+
   if (pdfjsLibPromise) return pdfjsLibPromise
 
   pdfjsLibPromise = new Promise((resolve, reject) => {
@@ -52,7 +61,20 @@ function loadPdfJs(): Promise<any> {
   return pdfjsLibPromise
 }
 
+// Dynamically import XLSX only on client side
+async function getXLSX() {
+  if (!isClient()) {
+    throw new Error("XLSX can only be loaded on the client side")
+  }
+  const XLSX = await import("xlsx")
+  return XLSX
+}
+
 export async function processPDFs(files: File[], onProgress?: (current: number, total: number) => void): Promise<Blob> {
+  if (!isClient()) {
+    throw new Error("processPDFs can only be called on the client side")
+  }
+
   const results: BatchData[] = []
 
   for (let i = 0; i < files.length; i++) {
@@ -186,7 +208,9 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
   }
 }
 
-function generateExcel(data: BatchData[]): Blob {
+async function generateExcel(data: BatchData[]): Promise<Blob> {
+  const XLSX = await getXLSX()
+
   // Create worksheet data
   const wsData = [
     [
