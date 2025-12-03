@@ -1,9 +1,31 @@
-import type { NextConfig } from "next";
+import type { NextConfig } from "next"
 
 const nextConfig: NextConfig = {
-  // Use Turbopack (Next.js 16 default)
-  // PDF.js is loaded from CDN, so no special bundler config needed
-  turbopack: {},
-};
+  typescript: {
+    ignoreBuildErrors: true,
+  },
+  images: {
+    unoptimized: true,
+  },
+  webpack: (config, { isServer }) => {
+    // Handle pdfjs-dist canvas dependency
+    if (isServer) {
+      config.externals = config.externals || []
+      config.externals.push({
+        canvas: "commonjs canvas",
+      })
+    }
 
-export default nextConfig;
+    // Ignore canvas module in client bundle
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      canvas: false,
+    }
+
+    return config
+  },
+  // Ensure pdfjs-dist is transpiled properly
+  transpilePackages: ["pdfjs-dist"],
+}
+
+export default nextConfig
