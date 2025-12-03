@@ -7,6 +7,8 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true,
   },
+  // Required for Next.js 16 with Turbopack
+  turbopack: {},
   webpack: (config, { isServer }) => {
     // Handle pdfjs-dist canvas dependency
     if (isServer) {
