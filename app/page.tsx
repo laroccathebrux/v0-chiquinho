@@ -1,103 +1,237 @@
-import Image from "next/image";
+"use client"
 
-export default function Home() {
+import type React from "react"
+
+import { useState } from "react"
+import { Upload, FileText, Download, Loader2 } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Card } from "@/components/ui/card"
+import { Progress } from "@/components/ui/progress"
+import { processPDFs } from "@/lib/pdf-processor"
+
+export default function PDFProcessorPage() {
+  const [files, setFiles] = useState<File[]>([])
+  const [processing, setProcessing] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const [processedData, setProcessedData] = useState<any>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const selectedFiles = Array.from(e.target.files)
+      setFiles(selectedFiles)
+      setError(null)
+      setProcessedData(null)
+    }
+  }
+
+  const handleProcess = async () => {
+    if (files.length === 0) {
+      setError("Please select at least one PDF file")
+      return
+    }
+
+    setProcessing(true)
+    setError(null)
+    setProgress(0)
+
+    try {
+      const result = await processPDFs(files, (current, total) => {
+        setProgress((current / total) * 100)
+      })
+
+      setProcessedData(result)
+      setProgress(100)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An error occurred while processing PDFs")
+    } finally {
+      setProcessing(false)
+    }
+  }
+
+  const handleDownload = () => {
+    if (processedData) {
+      const url = URL.createObjectURL(processedData)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `batch-summary-${new Date().toISOString().split("T")[0]}.xlsx`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    }
+  }
+
+  const handleClear = () => {
+    setFiles([])
+    setProcessedData(null)
+    setError(null)
+    setProgress(0)
+  }
+
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
-
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+    <div className="min-h-screen bg-background">
+      <div className="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8">
+        <div className="mb-12 text-center">
+          <div className="mb-4 inline-flex items-center justify-center rounded-2xl bg-primary/10 p-3">
+            <FileText className="h-8 w-8 text-primary" />
+          </div>
+          <h1 className="mb-3 text-balance text-4xl font-semibold tracking-tight text-foreground sm:text-5xl">
+            PDF Batch Processor
+          </h1>
+          <p className="text-pretty text-lg text-muted-foreground">
+            Extract batch data from multiple PDFs and generate Excel summaries
+          </p>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+
+        <Card className="overflow-hidden border-border bg-card p-8 shadow-lg">
+          {/* Upload Section */}
+          <div className="mb-8">
+            <label
+              htmlFor="file-upload"
+              className="group relative flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-border bg-muted/30 px-6 py-12 transition-all hover:border-primary/50 hover:bg-muted/50"
+            >
+              <Upload className="mb-4 h-12 w-12 text-muted-foreground transition-colors group-hover:text-primary" />
+              <p className="mb-2 text-base font-medium text-foreground">
+                {files.length > 0
+                  ? `${files.length} file${files.length > 1 ? "s" : ""} selected`
+                  : "Click to upload PDFs"}
+              </p>
+              <p className="text-sm text-muted-foreground">Select multiple PDF files with the same structure</p>
+              <input
+                id="file-upload"
+                type="file"
+                multiple
+                accept=".pdf"
+                onChange={handleFileChange}
+                className="sr-only"
+                disabled={processing}
+              />
+            </label>
+          </div>
+
+          {/* File List */}
+          {files.length > 0 && (
+            <div className="mb-8">
+              <h3 className="mb-3 text-sm font-medium text-foreground">Selected Files</h3>
+              <div className="max-h-48 space-y-2 overflow-y-auto rounded-lg border border-border bg-muted/20 p-4">
+                {files.map((file, index) => (
+                  <div key={index} className="flex items-center gap-3 rounded-md bg-background px-3 py-2 text-sm">
+                    <FileText className="h-4 w-4 text-primary" />
+                    <span className="flex-1 truncate text-foreground">{file.name}</span>
+                    <span className="text-xs text-muted-foreground">{(file.size / 1024).toFixed(1)} KB</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Progress Bar */}
+          {processing && (
+            <div className="mb-8">
+              <div className="mb-2 flex items-center justify-between text-sm">
+                <span className="font-medium text-foreground">Processing PDFs...</span>
+                <span className="text-muted-foreground">{Math.round(progress)}%</span>
+              </div>
+              <Progress value={progress} className="h-2" />
+            </div>
+          )}
+
+          {/* Error Message */}
+          {error && (
+            <div className="mb-8 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
+              {error}
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          <div className="flex flex-col gap-3 sm:flex-row">
+            {!processedData ? (
+              <>
+                <Button
+                  onClick={handleProcess}
+                  disabled={processing || files.length === 0}
+                  className="flex-1"
+                  size="lg"
+                >
+                  {processing ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <FileText className="mr-2 h-4 w-4" />
+                      Process PDFs
+                    </>
+                  )}
+                </Button>
+                {files.length > 0 && (
+                  <Button onClick={handleClear} variant="outline" disabled={processing} size="lg">
+                    Clear
+                  </Button>
+                )}
+              </>
+            ) : (
+              <>
+                <Button onClick={handleDownload} className="flex-1" size="lg">
+                  <Download className="mr-2 h-4 w-4" />
+                  Download Excel Summary
+                </Button>
+                <Button onClick={handleClear} variant="outline" size="lg">
+                  Process New Files
+                </Button>
+              </>
+            )}
+          </div>
+        </Card>
+
+        {/* Info Section */}
+        <div className="mt-12 rounded-xl border border-border bg-card/50 p-6">
+          <h3 className="mb-4 text-sm font-semibold text-foreground">What gets extracted:</h3>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <h4 className="mb-2 text-xs font-medium text-muted-foreground">From Header:</h4>
+              <ul className="space-y-1 text-sm text-foreground">
+                <li className="flex items-start gap-2">
+                  <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
+                  Batch Number
+                </li>
+              </ul>
+            </div>
+            <div>
+              <h4 className="mb-2 text-xs font-medium text-muted-foreground">From Footer:</h4>
+              <ul className="space-y-1 text-sm text-foreground">
+                <li className="flex items-start gap-2">
+                  <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
+                  Batch Weight
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
+                  Number of Bales
+                </li>
+              </ul>
+            </div>
+            <div className="sm:col-span-2">
+              <h4 className="mb-2 text-xs font-medium text-muted-foreground">From Table (Min/Avg/Max):</h4>
+              <ul className="space-y-1 text-sm text-foreground">
+                <li className="flex items-start gap-2">
+                  <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
+                  Mic (Micronaire)
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
+                  Pol (Polarization)
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
+                  STR (Strength)
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
-  );
+  )
 }
