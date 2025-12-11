@@ -732,23 +732,31 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
     }
 
     // Try to extract from summary lines (Mínimo, Média, Máximo at the end)
-    const minimoMatch = fullText.match(/Mínimo[^\d]*([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)/i)
-    const mediaMatch = fullText.match(/Média[^\d]*([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)/i)
-    const maximoMatch = fullText.match(/Máximo[^\d]*([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)/i)
+    // Format: "- Mínimo - 29,14 1,15 4,1 80,10 29,00 ..." or "Mínimo - 29,14 ..."
+    // Column order after label: UHM, LEN, MIC, UI, RES, ELG, RD, B
+    // The pattern needs to be flexible to handle:
+    // "- Mínimo - 29,14 ..." or "Mínimo - 29,14" or "Mínimo: 29,14" or just "Mínimo 29,14"
 
-    // Column order in summary: UHM, LEN, MIC, UI, RES
-    if (mediaMatch) {
-      console.log("Found summary - Média:", mediaMatch.slice(1, 6))
-      const uhmAvg = parseNumericValue(mediaMatch[1])
-      const micAvg = parseNumericValue(mediaMatch[3])
-      const strAvg = parseNumericValue(mediaMatch[5])
+    const minimoLine = fullText.match(/[^\w]Mínimo[^\d]*([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)/i)
+    const mediaLine = fullText.match(/[^\w]Média[^\d]*([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)/i)
+    const maximoLine = fullText.match(/[^\w]Máximo[^\d]*([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)/i)
 
-      const uhmMin = minimoMatch ? parseNumericValue(minimoMatch[1]) : uhmAvg
-      const uhmMax = maximoMatch ? parseNumericValue(maximoMatch[1]) : uhmAvg
-      const micMin = minimoMatch ? parseNumericValue(minimoMatch[3]) : micAvg
-      const micMax = maximoMatch ? parseNumericValue(maximoMatch[3]) : micAvg
-      const strMin = minimoMatch ? parseNumericValue(minimoMatch[5]) : strAvg
-      const strMax = maximoMatch ? parseNumericValue(maximoMatch[5]) : strAvg
+    // Column order in summary: [1]UHM, [2]LEN, [3]MIC, [4]UI, [5]RES, [6]ELG
+    if (mediaLine) {
+      console.log("Found summary - Média:", mediaLine.slice(1, 7))
+      console.log("Found summary - Mínimo:", minimoLine?.slice(1, 7))
+      console.log("Found summary - Máximo:", maximoLine?.slice(1, 7))
+
+      const uhmAvg = parseNumericValue(mediaLine[1])
+      const micAvg = parseNumericValue(mediaLine[3])
+      const strAvg = parseNumericValue(mediaLine[5])
+
+      const uhmMin = minimoLine ? parseNumericValue(minimoLine[1]) : uhmAvg
+      const uhmMax = maximoLine ? parseNumericValue(maximoLine[1]) : uhmAvg
+      const micMin = minimoLine ? parseNumericValue(minimoLine[3]) : micAvg
+      const micMax = maximoLine ? parseNumericValue(maximoLine[3]) : micAvg
+      const strMin = minimoLine ? parseNumericValue(minimoLine[5]) : strAvg
+      const strMax = maximoLine ? parseNumericValue(maximoLine[5]) : strAvg
 
       // Count bales by counting bale codes
       const baleCount = (fullText.match(/00\d{14,}/g) || []).length
