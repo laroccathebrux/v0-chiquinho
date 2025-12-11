@@ -329,13 +329,19 @@ function isDataRow(row: any[]): boolean {
   return false
 }
 
-// Main processing function
-export async function processFiles(
+// Result type for processFilesWithData
+export interface ProcessResult {
+  blob: Blob
+  data: BatchData[]
+}
+
+// Main processing function that returns both blob and data
+export async function processFilesWithData(
   files: File[],
   onProgress?: (current: number, total: number) => void
-): Promise<Blob> {
+): Promise<ProcessResult> {
   if (!isClient()) {
-    throw new Error("processFiles can only be called on the client side")
+    throw new Error("processFilesWithData can only be called on the client side")
   }
 
   const results: BatchData[] = []
@@ -363,7 +369,17 @@ export async function processFiles(
     }
   }
 
-  return generateExcel(results)
+  const blob = await generateExcel(results)
+  return { blob, data: results }
+}
+
+// Legacy function for backwards compatibility
+export async function processFiles(
+  files: File[],
+  onProgress?: (current: number, total: number) => void
+): Promise<Blob> {
+  const result = await processFilesWithData(files, onProgress)
+  return result.blob
 }
 
 // Backward compatibility alias
@@ -732,15 +748,38 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
     }
 
     // Try to extract from summary lines (Mínimo, Média, Máximo at the end)
-    // Format: "- Mínimo - 29,14 1,15 4,1 80,10 29,00 ..." or "Mínimo - 29,14 ..."
-    // Column order after label: [1]UHM(mm), [2]LEN(inches), [3]MIC, [4]UI, [5]RES, [6]ELG, [7]RD, [8]B
-    // The pattern needs to be flexible to handle:
-    // "- Mínimo - 29,14 ..." or "Mínimo - 29,14" or "Mínimo: 29,14" or just "Mínimo 29,14"
+    // This format has columns: UHM LEN MIC UI RES ELG RD B COR Area Cnt LEAF MR SFC SCI CSP
+    // Summary: "- Média - 30,48 1,20 4,2 82,42 30,78 6,76 78,56 8,74 - ,32 41,32 2,67 ,88 7,89 138 2279"
+    // We need to extract more numbers to get SCI (position ~15)
 
-    // Handle both accented and non-accented versions: Mínimo/Minimo, Média/Media, Máximo/Maximo
+    // Fallback to simpler pattern
     const minimoLine = fullText.match(/[^\w]M[íi]nimo[^\d]*([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)/i)
     const mediaLine = fullText.match(/[^\w]M[ée]dia[^\d]*([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)/i)
     const maximoLine = fullText.match(/[^\w]M[áa]ximo[^\d]*([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)/i)
+
+    // Extract SCI from the full Média line
+    // Pattern: find the line with "Média" and extract all numbers, SCI is near the end (3-digit number before CSP 4-digit)
+    let sciAvgValue: number | null = null
+    const mediaFullLine = fullText.match(/[^\w]M[ée]dia[^\n\r]+/i)
+    if (mediaFullLine) {
+      console.log("Full Média line:", mediaFullLine[0])
+      // Extract all numbers from the line
+      const allNumbers = mediaFullLine[0].match(/[\d,\.]+/g)
+      if (allNumbers && allNumbers.length > 0) {
+        console.log("All numbers in Média line:", allNumbers)
+        // SCI is typically a 3-digit number (100-170 range) near the end, before CSP (4-digit)
+        // Look for pattern: SCI (3 digits 100-170) followed by CSP (4 digits 2000-2500)
+        for (let i = allNumbers.length - 2; i >= 0; i--) {
+          const val = parseNumericValue(allNumbers[i])
+          const nextVal = i + 1 < allNumbers.length ? parseNumericValue(allNumbers[i + 1]) : 0
+          if (val >= 100 && val <= 180 && nextVal >= 2000 && nextVal <= 2500) {
+            sciAvgValue = val
+            console.log(`Found SCI avg: ${sciAvgValue} (followed by CSP: ${nextVal})`)
+            break
+          }
+        }
+      }
+    }
 
     // Column order in summary: [1]UHM(mm), [2]LEN(inches), [3]MIC, [4]UI, [5]RES, [6]ELG
     // Use LEN (position 2) which is already in inches
@@ -761,7 +800,7 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
       const strMin = minimoLine ? parseNumericValue(minimoLine[5]) : strAvg
       const strMax = maximoLine ? parseNumericValue(maximoLine[5]) : strAvg
 
-      console.log(`Parsed values - UHM: ${uhmMinRaw}/${uhmAvgRaw}/${uhmMaxRaw}, MIC: ${micMin}/${micAvg}/${micMax}, STR: ${strMin}/${strAvg}/${strMax}`)
+      console.log(`Parsed values - UHM: ${uhmMinRaw}/${uhmAvgRaw}/${uhmMaxRaw}, MIC: ${micMin}/${micAvg}/${micMax}, STR: ${strMin}/${strAvg}/${strMax}, SCI: ${sciAvgValue}`)
 
       // Count bales by counting bale codes
       const baleCount = (fullText.match(/00\d{14,}/g) || []).length
@@ -786,7 +825,7 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
         strMin: strMin,
         strAvg: strAvg,
         strMax: strMax,
-        sciAvg: null,
+        sciAvg: sciAvgValue,
         sourceFile: file.name,
       }
     }
@@ -794,9 +833,9 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
 
   // Try G4 COTTON / Classificação do Lote de Plumas format
   // This format has "Romaneio X" and "Qtd Fardos N" with summary averages on the same line
-  // Columns: Fardo | Líquido | Máq | Tipo | Área | UHM | Ui | Sfc | Res | Elg | Mic | Rd | +b | Csp | Leaf...
-  // Summary line: "Qtd Fardos 110 0,52 1,14 82,22 9,15 30,37 6,42 4,12 76,85..."
-  // Column order in summary: [1]Área [2]UHM [3]Ui [4]Sfc [5]Res [6]Elg [7]Mic...
+  // Columns: Fardo | Líquido | Máq | Tipo | Área | UHM | Ui | Sfc | Res | Elg | Mic | Rd | +b | Csp | Leaf | Cont | Mat | Fibra | Comp | Sugar | Neps | Neps Comp | Carameliz | SCI
+  // Summary line: "Qtd Fardos 110 0,52 1,14 82,22 9,15 30,37 6,42 4,12 76,85 9,25 2.190,48 3,87 44,31 86,90 0,00 0,00 0,00 0,00 0,00 0,00 1,34"
+  // Column order in summary: [1]Área [2]UHM [3]Ui [4]Sfc [5]Res [6]Elg [7]Mic [8]Rd [9]+b [10]Csp [11]Leaf [12]Cont [13]Mat [14]Fibra ... [last-1]Comp_value [last]SCI_value
   const hasG4Cotton = fullText.includes('G4 COTTON')
   const hasClassificacao = fullText.includes('Classificação do Lote de Plumas') || fullText.includes('Classificacao do Lote de Plumas')
   const hasRomaneioHeader = fullText.includes('Romaneio') && fullText.match(/Fardo\s+L[ií]quido/i)
@@ -806,16 +845,26 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
 
   // Match "Qtd Fardos 110" followed by averages - more flexible pattern
   // The numbers might be separated by various whitespace
-  const qtdFardosWithAvgMatch = fullText.match(/Qtd\s*Fardos\s+(\d+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)/i)
+  // Look for 2+ digit number after "Qtd Fardos" to avoid matching single digits
+  const qtdFardosWithAvgMatch = fullText.match(/Qtd\s*Fardos\s+(\d{2,})\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)/i)
 
   console.log(`qtdFardosWithAvgMatch: ${qtdFardosWithAvgMatch ? 'found' : 'not found'}`)
   if (qtdFardosWithAvgMatch) {
     console.log(`Match groups: ${qtdFardosWithAvgMatch.slice(1, 9).join(', ')}`)
   }
 
+  // Also try to get bale count by counting bale codes early
+  const allBaleCodes = fullText.match(/00\d{14,}/g) || []
+  const baleCodeCount = allBaleCodes.length
+  console.log(`Total bale codes found in PDF: ${baleCodeCount}`)
+
+  // Extract SCI from G4 COTTON format - SCI is the last column value on the summary line
+  // The line ends with "... 0,00 1,34" where 1,34 is the Comp value and SCI values are in individual rows (85, 86, 87, 88)
+  // Actually, looking at the PDF, SCI is in the last column of each bale row (values like 86,00, 85,00, etc.)
+  let g4CottonSciAvg: number | null = null
+
   if (isG4CottonFormat && qtdFardosWithAvgMatch) {
     console.log("G4 COTTON / Classificação do Lote de Plumas format detected")
-    numberOfBales = qtdFardosWithAvgMatch[1]
 
     // Extract averages from the summary line
     // Format: Qtd Fardos 110 [1]Área [2]UHM [3]Ui [4]Sfc [5]Res [6]Elg [7]Mic
@@ -830,6 +879,7 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
     const uhmValues: number[] = []
     const strValues: number[] = []
     const weightValues: number[] = []
+    const sciValues: number[] = []
 
     // Extract all numbers from text after each bale code
     const baleCodePattern = /00\d{14,}/g
@@ -842,19 +892,31 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
 
     console.log(`Found ${balePositions.length} bale codes`)
 
+    // Use bale code count as the authoritative source for number of bales
+    // The regex might not capture the full number correctly due to PDF text extraction issues
+    numberOfBales = baleCodeCount > 0 ? baleCodeCount.toString() : qtdFardosWithAvgMatch[1]
+    console.log(`Using bale count: ${numberOfBales}`)
+
     // For each bale, extract the numbers that follow
     // G4 COTTON column order after bale code:
-    // [0]Líquido [1]Máq [2]Tipo(21-3) [3]Área [4]UHM [5]Ui [6]Sfc [7]Res [8]Elg [9]Mic [10]Rd [11]+b...
+    // [0]Líquido [1]Máq [2]Tipo(21-3) [3]Área [4]UHM [5]Ui [6]Sfc [7]Res [8]Elg [9]Mic [10]Rd [11]+b [12]Csp [13]Leaf [14]Cont [15]Mat [16]Fibra [17-21]zeros [22]Comp [23]SCI
     for (let i = 0; i < balePositions.length; i++) {
       const startPos = balePositions[i]
-      const endPos = i < balePositions.length - 1 ? balePositions[i + 1] - 20 : startPos + 300
+      const endPos = i < balePositions.length - 1 ? balePositions[i + 1] - 20 : startPos + 400
       const segment = fullText.substring(startPos, endPos)
 
       // Extract numbers from segment (skip tipo like "21-3")
       const numbers = segment
         .split(/\s+/)
         .filter(s => !/^\d+-\d+$/.test(s)) // Skip tipo patterns like "21-3"
-        .map(s => s.replace(',', '.'))
+        .map(s => {
+          // Handle Brazilian number format: 2.233,0 -> 2233.0
+          // If has both . and , where , comes last, it's Brazilian format
+          if (s.includes('.') && s.includes(',') && s.lastIndexOf(',') > s.lastIndexOf('.')) {
+            return s.replace(/\./g, '').replace(',', '.')
+          }
+          return s.replace(',', '.')
+        })
         .filter(s => /^-?\d+\.?\d*$/.test(s))
         .map(s => parseFloat(s))
         .filter(n => !isNaN(n))
@@ -869,17 +931,33 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
         const uhmCandidate = numbers.find((n, idx) => idx >= 2 && idx <= 5 && n >= 1.0 && n <= 1.35)
         if (uhmCandidate) uhmValues.push(uhmCandidate)
 
-        // Res/STR is typically at index 6 - value ~29-32
-        const strCandidate = numbers.find((n, idx) => idx >= 5 && idx <= 8 && n >= 28 && n <= 35)
+        // Res/STR is typically at index 6 - value ~27-32
+        const strCandidate = numbers.find((n, idx) => idx >= 5 && idx <= 8 && n >= 27 && n <= 35)
         if (strCandidate) strValues.push(strCandidate)
 
         // Mic is typically at index 8 - value ~4.0-4.5
         const micCandidate = numbers.find((n, idx) => idx >= 7 && idx <= 10 && n >= 3.5 && n <= 5.5)
         if (micCandidate) micValues.push(micCandidate)
+
+        // SCI is the last value in the row (typically 85-88 range for G4 COTTON)
+        // It's a 2-digit integer at the end of the row (e.g., 86.00, 85.00, 87.00, 88.00)
+        // Looking for values in 84-92 range at the end of the numbers array
+        // The pattern is: ... Comp(1.2-1.5) SCI(85-88)
+        // Look at the last few values to find SCI
+        // SCI should be an integer value (85, 86, 87, 88) possibly with .00
+        for (let idx = numbers.length - 1; idx >= Math.max(0, numbers.length - 8); idx--) {
+          const val = numbers[idx]
+          // SCI values are 84-92 range for G4 COTTON format
+          // Must be a whole number (or very close to it like 86.00)
+          if (val >= 84 && val <= 92 && Math.abs(val - Math.round(val)) < 0.01) {
+            sciValues.push(Math.round(val))
+            break
+          }
+        }
       }
     }
 
-    console.log(`Extracted: ${weightValues.length} weights, ${micValues.length} mic, ${uhmValues.length} uhm, ${strValues.length} str`)
+    console.log(`Extracted: ${weightValues.length} weights, ${micValues.length} mic, ${uhmValues.length} uhm, ${strValues.length} str, ${sciValues.length} sci`)
 
     // Calculate totals
     if (weightValues.length > 0) {
@@ -890,6 +968,11 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
     const micStats = calculateStats(micValues)
     const uhmStats = calculateStats(uhmValues)
     const strStats = calculateStats(strValues)
+    const sciStats = calculateStats(sciValues)
+
+    // Calculate SCI average from individual bale values
+    g4CottonSciAvg = sciStats.avg > 0 ? sciStats.avg : null
+    console.log(`G4 COTTON SCI average: ${g4CottonSciAvg}`)
 
     return {
       batchNumber,
@@ -904,7 +987,7 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
       strMin: strStats.min > 0 ? strStats.min : strAvg,
       strAvg: strAvg > 0 ? strAvg : strStats.avg,
       strMax: strStats.max > 0 ? strStats.max : strAvg,
-      sciAvg: null,
+      sciAvg: g4CottonSciAvg,
       sourceFile: file.name,
     }
   }
@@ -913,16 +996,14 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
   if (isG4CottonFormat && !qtdFardosWithAvgMatch) {
     console.log("G4 COTTON format detected but no summary line - parsing bale data directly")
 
-    // Get number of bales from "Qtd Fardos N" without the averages
-    const simpleQtdMatch = fullText.match(/Qtd\s*Fardos\s+(\d+)/i)
-    if (simpleQtdMatch) {
-      numberOfBales = simpleQtdMatch[1]
-    }
+    // Use bale code count as authoritative source
+    numberOfBales = baleCodeCount > 0 ? baleCodeCount.toString() : "N/A"
 
     const micValues: number[] = []
     const uhmValues: number[] = []
     const strValues: number[] = []
     const weightValues: number[] = []
+    const sciValues: number[] = []
 
     // Extract all numbers from text after each bale code
     const baleCodePattern = /00\d{14,}/g
@@ -938,14 +1019,20 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
     // For each bale, extract the numbers that follow
     for (let i = 0; i < balePositions.length; i++) {
       const startPos = balePositions[i]
-      const endPos = i < balePositions.length - 1 ? balePositions[i + 1] - 20 : startPos + 300
+      const endPos = i < balePositions.length - 1 ? balePositions[i + 1] - 20 : startPos + 400
       const segment = fullText.substring(startPos, endPos)
 
       // Extract numbers from segment (skip tipo like "21-3")
       const numbers = segment
         .split(/\s+/)
         .filter(s => !/^\d+-\d+$/.test(s)) // Skip tipo patterns like "21-3"
-        .map(s => s.replace(',', '.'))
+        .map(s => {
+          // Handle Brazilian number format: 2.233,0 -> 2233.0
+          if (s.includes('.') && s.includes(',') && s.lastIndexOf(',') > s.lastIndexOf('.')) {
+            return s.replace(/\./g, '').replace(',', '.')
+          }
+          return s.replace(',', '.')
+        })
         .filter(s => /^-?\d+\.?\d*$/.test(s))
         .map(s => parseFloat(s))
         .filter(n => !isNaN(n))
@@ -960,17 +1047,28 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
         const uhmCandidate = numbers.find((n, idx) => idx >= 2 && idx <= 5 && n >= 1.0 && n <= 1.35)
         if (uhmCandidate) uhmValues.push(uhmCandidate)
 
-        // Res/STR is typically ~29-32
-        const strCandidate = numbers.find((n, idx) => idx >= 5 && idx <= 8 && n >= 28 && n <= 35)
+        // Res/STR is typically ~27-32
+        const strCandidate = numbers.find((n, idx) => idx >= 5 && idx <= 8 && n >= 27 && n <= 35)
         if (strCandidate) strValues.push(strCandidate)
 
         // Mic is typically ~4.0-4.5
         const micCandidate = numbers.find((n, idx) => idx >= 7 && idx <= 10 && n >= 3.5 && n <= 5.5)
         if (micCandidate) micValues.push(micCandidate)
+
+        // SCI is the last value in the row (typically 85-88 range for G4 COTTON)
+        // Look at the last few values to find SCI
+        for (let idx = numbers.length - 1; idx >= Math.max(0, numbers.length - 8); idx--) {
+          const val = numbers[idx]
+          // SCI values are 84-92 range, must be whole number
+          if (val >= 84 && val <= 92 && Math.abs(val - Math.round(val)) < 0.01) {
+            sciValues.push(Math.round(val))
+            break
+          }
+        }
       }
     }
 
-    console.log(`Direct parsing extracted: ${weightValues.length} weights, ${micValues.length} mic, ${uhmValues.length} uhm, ${strValues.length} str`)
+    console.log(`Direct parsing extracted: ${weightValues.length} weights, ${micValues.length} mic, ${uhmValues.length} uhm, ${strValues.length} str, ${sciValues.length} sci`)
 
     if (micValues.length > 0 || uhmValues.length > 0 || strValues.length > 0) {
       if (weightValues.length > 0) {
@@ -980,6 +1078,7 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
       const micStats = calculateStats(micValues)
       const uhmStats = calculateStats(uhmValues)
       const strStats = calculateStats(strValues)
+      const sciStats = calculateStats(sciValues)
 
       return {
         batchNumber,
@@ -994,7 +1093,7 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
         strMin: strStats.min,
         strAvg: strStats.avg,
         strMax: strStats.max,
-        sciAvg: null,
+        sciAvg: sciStats.avg > 0 ? sciStats.avg : null,
         sourceFile: file.name,
       }
     }
