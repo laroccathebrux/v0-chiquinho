@@ -2,19 +2,56 @@
 
 import type React from "react"
 
-import { useState } from "react"
-import { Upload, FileText, Download, Loader2 } from "lucide-react"
+import { useState, useRef, useEffect } from "react"
+import { Upload, FileText, Download, Loader2, MessageCircle, Send, X, BarChart3 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
-import { processFiles } from "@/lib/pdf-processor"
+import { processFilesWithData } from "@/lib/pdf-processor"
+
+interface BatchData {
+  batchNumber: string
+  batchWeight: string
+  numberOfBales: string
+  micMin: number
+  micAvg: number
+  micMax: number
+  uhmMin: number
+  uhmAvg: number
+  uhmMax: number
+  strMin: number
+  strAvg: number
+  strMax: number
+  sciAvg: number | null
+  sourceFile: string
+}
+
+interface ChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
 
 export default function PDFProcessorPage() {
   const [files, setFiles] = useState<File[]>([])
   const [processing, setProcessing] = useState(false)
   const [progress, setProgress] = useState(0)
-  const [processedData, setProcessedData] = useState<any>(null)
+  const [processedData, setProcessedData] = useState<Blob | null>(null)
+  const [processedBatches, setProcessedBatches] = useState<BatchData[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  // Chat state
+  const [chatOpen, setChatOpen] = useState(false)
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
+  const [chatInput, setChatInput] = useState('')
+  const [chatLoading, setChatLoading] = useState(false)
+  const chatEndRef = useRef<HTMLDivElement>(null)
+
+  // Scroll chat to bottom when new messages arrive
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [chatMessages])
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -22,6 +59,8 @@ export default function PDFProcessorPage() {
       setFiles(selectedFiles)
       setError(null)
       setProcessedData(null)
+      setProcessedBatches([])
+      setSaved(false)
     }
   }
 
@@ -34,18 +73,53 @@ export default function PDFProcessorPage() {
     setProcessing(true)
     setError(null)
     setProgress(0)
+    setSaved(false)
 
     try {
-      const result = await processFiles(files, (current, total) => {
+      // Process files and get both blob and data
+      const result = await processFilesWithData(files, (current, total) => {
         setProgress((current / total) * 100)
       })
 
-      setProcessedData(result)
+      setProcessedData(result.blob)
+      setProcessedBatches(result.data)
       setProgress(100)
+
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred while processing PDFs")
     } finally {
       setProcessing(false)
+    }
+  }
+
+  const handleSaveData = async () => {
+    if (!processedData || processedBatches.length === 0) return
+
+    setSaving(true)
+    try {
+      // Save summary data
+      const response = await fetch('/api/data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'summary',
+          data: {
+            files: files.map(f => f.name),
+            totalBatches: processedBatches.length,
+            data: processedBatches
+          }
+        })
+      })
+
+      if (response.ok) {
+        setSaved(true)
+      } else {
+        throw new Error('Failed to save data')
+      }
+    } catch (err) {
+      setError('Erro ao salvar dados: ' + (err instanceof Error ? err.message : 'Erro desconhecido'))
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -65,8 +139,52 @@ export default function PDFProcessorPage() {
   const handleClear = () => {
     setFiles([])
     setProcessedData(null)
+    setProcessedBatches([])
     setError(null)
     setProgress(0)
+    setSaved(false)
+  }
+
+  const handleSendMessage = async () => {
+    if (!chatInput.trim() || chatLoading) return
+
+    const userMessage = chatInput.trim()
+    setChatInput('')
+    setChatMessages(prev => [...prev, { role: 'user', content: userMessage }])
+    setChatLoading(true)
+
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: userMessage,
+          generateChart: userMessage.toLowerCase().includes('gráfico') || userMessage.toLowerCase().includes('grafico')
+        })
+      })
+
+      const data = await response.json()
+
+      if (data.error) {
+        throw new Error(data.error)
+      }
+
+      setChatMessages(prev => [...prev, { role: 'assistant', content: data.message }])
+    } catch (err) {
+      setChatMessages(prev => [...prev, {
+        role: 'assistant',
+        content: 'Desculpe, ocorreu um erro ao processar sua mensagem. Verifique se a chave da API OpenAI está configurada no arquivo .env'
+      }])
+    } finally {
+      setChatLoading(false)
+    }
+  }
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSendMessage()
+    }
   }
 
   return (
@@ -113,7 +231,7 @@ export default function PDFProcessorPage() {
           {/* File List */}
           {files.length > 0 && (
             <div className="mb-8">
-              <h3 className="mb-3 text-sm font-medium text-foreground">Selected Files</h3>
+              <h3 className="mb-3 text-sm font-medium text-foreground">Arquivos Selecionados</h3>
               <div className="max-h-48 space-y-2 overflow-y-auto rounded-lg border border-border bg-muted/20 p-4">
                 {files.map((file, index) => (
                   <div key={index} className="flex items-center gap-3 rounded-md bg-background px-3 py-2 text-sm">
@@ -130,7 +248,7 @@ export default function PDFProcessorPage() {
           {processing && (
             <div className="mb-8">
               <div className="mb-2 flex items-center justify-between text-sm">
-                <span className="font-medium text-foreground">Processing PDFs...</span>
+                <span className="font-medium text-foreground">Processando arquivos...</span>
                 <span className="text-muted-foreground">{Math.round(progress)}%</span>
               </div>
               <Progress value={progress} className="h-2" />
@@ -141,6 +259,13 @@ export default function PDFProcessorPage() {
           {error && (
             <div className="mb-8 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
               {error}
+            </div>
+          )}
+
+          {/* Success Message */}
+          {saved && (
+            <div className="mb-8 rounded-lg border border-green-500/50 bg-green-500/10 p-4 text-sm text-green-700 dark:text-green-400">
+              Dados salvos com sucesso! Agora você pode usar o chat para fazer perguntas.
             </div>
           )}
 
@@ -178,8 +303,31 @@ export default function PDFProcessorPage() {
                   <Download className="mr-2 h-4 w-4" />
                   Baixar Resumo Excel
                 </Button>
+                <Button
+                  onClick={handleSaveData}
+                  variant="secondary"
+                  size="lg"
+                  disabled={saving || saved}
+                >
+                  {saving ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Salvando...
+                    </>
+                  ) : saved ? (
+                    <>
+                      <BarChart3 className="mr-2 h-4 w-4" />
+                      Salvo!
+                    </>
+                  ) : (
+                    <>
+                      <BarChart3 className="mr-2 h-4 w-4" />
+                      Salvar para Análise
+                    </>
+                  )}
+                </Button>
                 <Button onClick={handleClear} variant="outline" size="lg">
-                  Processar Novos Arquivos
+                  Novos Arquivos
                 </Button>
               </>
             )}
@@ -233,7 +381,7 @@ export default function PDFProcessorPage() {
               <ul className="space-y-1 text-sm text-foreground">
                 <li className="flex items-start gap-2">
                   <span className="mt-1 h-1.5 w-1.5 rounded-full bg-green-500" />
-                  PDF - Laudos de classificação (ABAPA, AGOPA, Minas Cotton, etc.)
+                  PDF - Laudos de classificação (ABAPA, AGOPA, Minas Cotton, G4 COTTON, etc.)
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="mt-1 h-1.5 w-1.5 rounded-full bg-green-500" />
@@ -252,6 +400,90 @@ export default function PDFProcessorPage() {
           </div>
         </div>
       </div>
+
+      {/* Chat Button */}
+      <button
+        onClick={() => setChatOpen(!chatOpen)}
+        className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform hover:scale-105"
+        title="Pergunte sobre os dados"
+      >
+        {chatOpen ? <X className="h-6 w-6" /> : <MessageCircle className="h-6 w-6" />}
+      </button>
+
+      {/* Chat Panel */}
+      {chatOpen && (
+        <div className="fixed bottom-24 right-6 z-50 flex h-[500px] w-[380px] flex-col rounded-xl border border-border bg-card shadow-2xl">
+          {/* Chat Header */}
+          <div className="flex items-center gap-3 border-b border-border p-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+              <MessageCircle className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-foreground">Assistente de Algodão</h3>
+              <p className="text-xs text-muted-foreground">Pergunte sobre os dados processados</p>
+            </div>
+          </div>
+
+          {/* Chat Messages */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {chatMessages.length === 0 && (
+              <div className="text-center text-sm text-muted-foreground py-8">
+                <p className="mb-2">Olá! Sou seu assistente de análise de algodão.</p>
+                <p className="text-xs">Processe e salve alguns arquivos, depois me pergunte sobre os dados.</p>
+                <p className="text-xs mt-2">Exemplos:</p>
+                <p className="text-xs italic">&quot;Qual a média de SCI do G4 Cotton?&quot;</p>
+                <p className="text-xs italic">&quot;Compare a resistência dos produtores&quot;</p>
+              </div>
+            )}
+            {chatMessages.map((msg, index) => (
+              <div
+                key={index}
+                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              >
+                <div
+                  className={`max-w-[85%] rounded-lg px-4 py-2 text-sm ${
+                    msg.role === 'user'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted text-foreground'
+                  }`}
+                >
+                  <p className="whitespace-pre-wrap">{msg.content}</p>
+                </div>
+              </div>
+            ))}
+            {chatLoading && (
+              <div className="flex justify-start">
+                <div className="bg-muted rounded-lg px-4 py-2">
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                </div>
+              </div>
+            )}
+            <div ref={chatEndRef} />
+          </div>
+
+          {/* Chat Input */}
+          <div className="border-t border-border p-4">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                onKeyPress={handleKeyPress}
+                placeholder="Digite sua pergunta..."
+                className="flex-1 rounded-lg border border-border bg-background px-4 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                disabled={chatLoading}
+              />
+              <Button
+                onClick={handleSendMessage}
+                disabled={!chatInput.trim() || chatLoading}
+                size="icon"
+              >
+                <Send className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
