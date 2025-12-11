@@ -737,9 +737,10 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
     // The pattern needs to be flexible to handle:
     // "- Mínimo - 29,14 ..." or "Mínimo - 29,14" or "Mínimo: 29,14" or just "Mínimo 29,14"
 
-    const minimoLine = fullText.match(/[^\w]Mínimo[^\d]*([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)/i)
-    const mediaLine = fullText.match(/[^\w]Média[^\d]*([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)/i)
-    const maximoLine = fullText.match(/[^\w]Máximo[^\d]*([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)/i)
+    // Handle both accented and non-accented versions: Mínimo/Minimo, Média/Media, Máximo/Maximo
+    const minimoLine = fullText.match(/[^\w]M[íi]nimo[^\d]*([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)/i)
+    const mediaLine = fullText.match(/[^\w]M[ée]dia[^\d]*([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)/i)
+    const maximoLine = fullText.match(/[^\w]M[áa]ximo[^\d]*([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)/i)
 
     // Column order in summary: [1]UHM(mm), [2]LEN(inches), [3]MIC, [4]UI, [5]RES, [6]ELG
     // Use LEN (position 2) which is already in inches
