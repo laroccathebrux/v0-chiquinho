@@ -845,12 +845,18 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
 
   // Match "Qtd Fardos 110" followed by averages - more flexible pattern
   // The numbers might be separated by various whitespace
-  const qtdFardosWithAvgMatch = fullText.match(/Qtd\s*Fardos\s+(\d+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)/i)
+  // Look for 2+ digit number after "Qtd Fardos" to avoid matching single digits
+  const qtdFardosWithAvgMatch = fullText.match(/Qtd\s*Fardos\s+(\d{2,})\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)/i)
 
   console.log(`qtdFardosWithAvgMatch: ${qtdFardosWithAvgMatch ? 'found' : 'not found'}`)
   if (qtdFardosWithAvgMatch) {
     console.log(`Match groups: ${qtdFardosWithAvgMatch.slice(1, 9).join(', ')}`)
   }
+
+  // Also try to get bale count by counting bale codes early
+  const allBaleCodes = fullText.match(/00\d{14,}/g) || []
+  const baleCodeCount = allBaleCodes.length
+  console.log(`Total bale codes found in PDF: ${baleCodeCount}`)
 
   // Extract SCI from G4 COTTON format - SCI is the last column value on the summary line
   // The line ends with "... 0,00 1,34" where 1,34 is the Comp value and SCI values are in individual rows (85, 86, 87, 88)
@@ -886,15 +892,10 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
 
     console.log(`Found ${balePositions.length} bale codes`)
 
-    // Use bale count from regex match, but fallback to counted bale codes if it seems wrong
-    const regexBaleCount = parseInt(qtdFardosWithAvgMatch[1], 10)
-    // If regex got a small number but we found many bale codes, use the bale code count
-    if (regexBaleCount < 10 && balePositions.length > 10) {
-      numberOfBales = balePositions.length.toString()
-      console.log(`Using bale code count (${balePositions.length}) instead of regex match (${regexBaleCount})`)
-    } else {
-      numberOfBales = qtdFardosWithAvgMatch[1]
-    }
+    // Use bale code count as the authoritative source for number of bales
+    // The regex might not capture the full number correctly due to PDF text extraction issues
+    numberOfBales = baleCodeCount > 0 ? baleCodeCount.toString() : qtdFardosWithAvgMatch[1]
+    console.log(`Using bale count: ${numberOfBales}`)
 
     // For each bale, extract the numbers that follow
     // G4 COTTON column order after bale code:
@@ -995,11 +996,8 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
   if (isG4CottonFormat && !qtdFardosWithAvgMatch) {
     console.log("G4 COTTON format detected but no summary line - parsing bale data directly")
 
-    // Get number of bales from "Qtd Fardos N" without the averages
-    const simpleQtdMatch = fullText.match(/Qtd\s*Fardos\s+(\d+)/i)
-    if (simpleQtdMatch) {
-      numberOfBales = simpleQtdMatch[1]
-    }
+    // Use bale code count as authoritative source
+    numberOfBales = baleCodeCount > 0 ? baleCodeCount.toString() : "N/A"
 
     const micValues: number[] = []
     const uhmValues: number[] = []
