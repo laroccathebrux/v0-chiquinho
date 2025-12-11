@@ -931,8 +931,8 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
         const uhmCandidate = numbers.find((n, idx) => idx >= 2 && idx <= 5 && n >= 1.0 && n <= 1.35)
         if (uhmCandidate) uhmValues.push(uhmCandidate)
 
-        // Res/STR is typically at index 6 - value ~29-32
-        const strCandidate = numbers.find((n, idx) => idx >= 5 && idx <= 8 && n >= 28 && n <= 35)
+        // Res/STR is typically at index 6 - value ~27-32
+        const strCandidate = numbers.find((n, idx) => idx >= 5 && idx <= 8 && n >= 27 && n <= 35)
         if (strCandidate) strValues.push(strCandidate)
 
         // Mic is typically at index 8 - value ~4.0-4.5
@@ -1047,8 +1047,8 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
         const uhmCandidate = numbers.find((n, idx) => idx >= 2 && idx <= 5 && n >= 1.0 && n <= 1.35)
         if (uhmCandidate) uhmValues.push(uhmCandidate)
 
-        // Res/STR is typically ~29-32
-        const strCandidate = numbers.find((n, idx) => idx >= 5 && idx <= 8 && n >= 28 && n <= 35)
+        // Res/STR is typically ~27-32
+        const strCandidate = numbers.find((n, idx) => idx >= 5 && idx <= 8 && n >= 27 && n <= 35)
         if (strCandidate) strValues.push(strCandidate)
 
         // Mic is typically ~4.0-4.5
