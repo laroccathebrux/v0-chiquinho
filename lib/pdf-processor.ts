@@ -733,7 +733,7 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
 
     // Try to extract from summary lines (Mínimo, Média, Máximo at the end)
     // Format: "- Mínimo - 29,14 1,15 4,1 80,10 29,00 ..." or "Mínimo - 29,14 ..."
-    // Column order after label: UHM, LEN, MIC, UI, RES, ELG, RD, B
+    // Column order after label: [1]UHM(mm), [2]LEN(inches), [3]MIC, [4]UI, [5]RES, [6]ELG, [7]RD, [8]B
     // The pattern needs to be flexible to handle:
     // "- Mínimo - 29,14 ..." or "Mínimo - 29,14" or "Mínimo: 29,14" or just "Mínimo 29,14"
 
@@ -741,31 +741,36 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
     const mediaLine = fullText.match(/[^\w]Média[^\d]*([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)/i)
     const maximoLine = fullText.match(/[^\w]Máximo[^\d]*([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)/i)
 
-    // Column order in summary: [1]UHM, [2]LEN, [3]MIC, [4]UI, [5]RES, [6]ELG
+    // Column order in summary: [1]UHM(mm), [2]LEN(inches), [3]MIC, [4]UI, [5]RES, [6]ELG
+    // Use LEN (position 2) which is already in inches
     if (mediaLine) {
       console.log("Found summary - Média:", mediaLine.slice(1, 7))
       console.log("Found summary - Mínimo:", minimoLine?.slice(1, 7))
       console.log("Found summary - Máximo:", maximoLine?.slice(1, 7))
 
-      const uhmAvg = parseNumericValue(mediaLine[1])
+      // Position [2] is LEN in inches (1.20), Position [3] is MIC (4.2), Position [5] is RES (30.78)
+      const uhmAvgRaw = parseNumericValue(mediaLine[2]) // LEN in inches
       const micAvg = parseNumericValue(mediaLine[3])
       const strAvg = parseNumericValue(mediaLine[5])
 
-      const uhmMin = minimoLine ? parseNumericValue(minimoLine[1]) : uhmAvg
-      const uhmMax = maximoLine ? parseNumericValue(maximoLine[1]) : uhmAvg
+      const uhmMinRaw = minimoLine ? parseNumericValue(minimoLine[2]) : uhmAvgRaw
+      const uhmMaxRaw = maximoLine ? parseNumericValue(maximoLine[2]) : uhmAvgRaw
       const micMin = minimoLine ? parseNumericValue(minimoLine[3]) : micAvg
       const micMax = maximoLine ? parseNumericValue(maximoLine[3]) : micAvg
       const strMin = minimoLine ? parseNumericValue(minimoLine[5]) : strAvg
       const strMax = maximoLine ? parseNumericValue(maximoLine[5]) : strAvg
 
+      console.log(`Parsed values - UHM: ${uhmMinRaw}/${uhmAvgRaw}/${uhmMaxRaw}, MIC: ${micMin}/${micAvg}/${micMax}, STR: ${strMin}/${strAvg}/${strMax}`)
+
       // Count bales by counting bale codes
       const baleCount = (fullText.match(/00\d{14,}/g) || []).length
       numberOfBales = baleCount > 0 ? baleCount.toString() : "N/A"
 
-      // UHM values in this format are in mm (29-32), need to check
-      const normalizedUhmMin = normalizeUhmToInches(uhmMin)
-      const normalizedUhmAvg = normalizeUhmToInches(uhmAvg)
-      const normalizedUhmMax = normalizeUhmToInches(uhmMax)
+      // UHM values - use position [2] which should already be in inches (~1.15-1.25)
+      // If value > 2, it's in mm and needs conversion
+      const normalizedUhmMin = normalizeUhmToInches(uhmMinRaw)
+      const normalizedUhmAvg = normalizeUhmToInches(uhmAvgRaw)
+      const normalizedUhmMax = normalizeUhmToInches(uhmMaxRaw)
 
       return {
         batchNumber,
