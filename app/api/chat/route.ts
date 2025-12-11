@@ -1,15 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { promises as fs } from 'fs'
-import path from 'path'
-import OpenAI from 'openai'
+import { type NextRequest, NextResponse } from "next/server"
+import { promises as fs } from "fs"
+import path from "path"
+import OpenAI from "openai"
 
 // Directory to store JSON files (inside app directory for server deployment)
-const JSON_DIR = path.join(process.cwd(), 'data', 'json')
-
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
+const JSON_DIR = path.join(process.cwd(), "data", "json")
 
 interface BatchData {
   batchNumber: string
@@ -30,7 +25,7 @@ interface BatchData {
 }
 
 // Load all stored data
-async function loadAllData(): Promise<{ files: unknown[], summaries: unknown[], allBatches: BatchData[] }> {
+async function loadAllData(): Promise<{ files: unknown[]; summaries: unknown[]; allBatches: BatchData[] }> {
   try {
     await fs.access(JSON_DIR)
   } catch {
@@ -38,17 +33,17 @@ async function loadAllData(): Promise<{ files: unknown[], summaries: unknown[], 
   }
 
   const files = await fs.readdir(JSON_DIR)
-  const jsonFiles = files.filter(f => f.endsWith('.json'))
+  const jsonFiles = files.filter((f) => f.endsWith(".json"))
 
   const storedFiles: unknown[] = []
   const summaries: unknown[] = []
   const allBatches: BatchData[] = []
 
   for (const file of jsonFiles) {
-    const content = await fs.readFile(path.join(JSON_DIR, file), 'utf-8')
+    const content = await fs.readFile(path.join(JSON_DIR, file), "utf-8")
     const parsed = JSON.parse(content)
 
-    if (file.startsWith('summary_')) {
+    if (file.startsWith("summary_")) {
       summaries.push(parsed)
       if (parsed.data && Array.isArray(parsed.data)) {
         allBatches.push(...parsed.data)
@@ -65,7 +60,7 @@ async function loadAllData(): Promise<{ files: unknown[], summaries: unknown[], 
 }
 
 // Create context about the data for the AI
-function createDataContext(data: { files: unknown[], summaries: unknown[], allBatches: BatchData[] }): string {
+function createDataContext(data: { files: unknown[]; summaries: unknown[]; allBatches: BatchData[] }): string {
   const { allBatches } = data
 
   if (allBatches.length === 0) {
@@ -75,7 +70,7 @@ function createDataContext(data: { files: unknown[], summaries: unknown[], allBa
   // Group by source file (producer)
   const byProducer: Record<string, BatchData[]> = {}
   for (const batch of allBatches) {
-    const producer = batch.sourceFile || 'Desconhecido'
+    const producer = batch.sourceFile || "Desconhecido"
     if (!byProducer[producer]) {
       byProducer[producer] = []
     }
@@ -92,10 +87,8 @@ function createDataContext(data: { files: unknown[], summaries: unknown[], allBa
     context += `Lotes: ${batches.length}\n`
 
     // Calculate averages for this producer
-    const validSci = batches.filter(b => b.sciAvg !== null && b.sciAvg > 0)
-    const avgSci = validSci.length > 0
-      ? validSci.reduce((sum, b) => sum + (b.sciAvg || 0), 0) / validSci.length
-      : null
+    const validSci = batches.filter((b) => b.sciAvg !== null && b.sciAvg > 0)
+    const avgSci = validSci.length > 0 ? validSci.reduce((sum, b) => sum + (b.sciAvg || 0), 0) / validSci.length : null
 
     const avgMic = batches.reduce((sum, b) => sum + b.micAvg, 0) / batches.length
     const avgStr = batches.reduce((sum, b) => sum + b.strAvg, 0) / batches.length
@@ -127,8 +120,13 @@ export async function POST(request: NextRequest) {
     const { message, generateChart } = await request.json()
 
     if (!message) {
-      return NextResponse.json({ error: 'Message is required' }, { status: 400 })
+      return NextResponse.json({ error: "Message is required" }, { status: 400 })
     }
+
+    // Initialize OpenAI client at runtime
+    const openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    })
 
     // Load all stored data
     const storedData = await loadAllData()
@@ -154,28 +152,28 @@ Se o usuário pedir para gerar um gráfico, você pode indicar que vai gerar um 
 
     // Prepare messages for OpenAI
     const messages: OpenAI.ChatCompletionMessageParam[] = [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: message }
+      { role: "system", content: systemPrompt },
+      { role: "user", content: message },
     ]
 
     // Call OpenAI API
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: "gpt-4o-mini",
       messages,
       temperature: 0.7,
       max_tokens: 1000,
     })
 
-    const assistantMessage = completion.choices[0]?.message?.content || 'Desculpe, não consegui processar sua pergunta.'
+    const assistantMessage = completion.choices[0]?.message?.content || "Desculpe, não consegui processar sua pergunta."
 
     // If chart generation is requested, prepare chart data
     let chartData = null
     if (generateChart && storedData.allBatches.length > 0) {
       // Group by producer for chart
-      const byProducer: Record<string, { avgSci: number, avgMic: number, avgStr: number, count: number }> = {}
+      const byProducer: Record<string, { avgSci: number; avgMic: number; avgStr: number; count: number }> = {}
 
       for (const batch of storedData.allBatches) {
-        const producer = batch.sourceFile.replace('.pdf', '').replace('.xlsx', '')
+        const producer = batch.sourceFile.replace(".pdf", "").replace(".xlsx", "")
         if (!byProducer[producer]) {
           byProducer[producer] = { avgSci: 0, avgMic: 0, avgStr: 0, count: 0 }
         }
@@ -191,32 +189,28 @@ Se o usuário pedir para gerar um gráfico, você pode indicar que vai gerar um 
         labels: Object.keys(byProducer),
         datasets: [
           {
-            label: 'SCI Médio',
-            data: Object.values(byProducer).map(p => p.avgSci / p.count || 0),
+            label: "SCI Médio",
+            data: Object.values(byProducer).map((p) => p.avgSci / p.count || 0),
           },
           {
-            label: 'Mic Médio',
-            data: Object.values(byProducer).map(p => p.avgMic / p.count),
+            label: "Mic Médio",
+            data: Object.values(byProducer).map((p) => p.avgMic / p.count),
           },
           {
-            label: 'STR Médio',
-            data: Object.values(byProducer).map(p => p.avgStr / p.count),
-          }
-        ]
+            label: "STR Médio",
+            data: Object.values(byProducer).map((p) => p.avgStr / p.count),
+          },
+        ],
       }
     }
 
     return NextResponse.json({
       message: assistantMessage,
       chartData,
-      hasData: storedData.allBatches.length > 0
+      hasData: storedData.allBatches.length > 0,
     })
-
   } catch (error) {
-    console.error('Error in chat API:', error)
-    return NextResponse.json(
-      { error: 'Failed to process message' },
-      { status: 500 }
-    )
+    console.error("Error in chat API:", error)
+    return NextResponse.json({ error: "Failed to process message" }, { status: 500 })
   }
 }
