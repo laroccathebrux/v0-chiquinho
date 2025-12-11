@@ -859,7 +859,6 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
 
   if (isG4CottonFormat && qtdFardosWithAvgMatch) {
     console.log("G4 COTTON / Classificação do Lote de Plumas format detected")
-    numberOfBales = qtdFardosWithAvgMatch[1]
 
     // Extract averages from the summary line
     // Format: Qtd Fardos 110 [1]Área [2]UHM [3]Ui [4]Sfc [5]Res [6]Elg [7]Mic
@@ -886,6 +885,16 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
     }
 
     console.log(`Found ${balePositions.length} bale codes`)
+
+    // Use bale count from regex match, but fallback to counted bale codes if it seems wrong
+    const regexBaleCount = parseInt(qtdFardosWithAvgMatch[1], 10)
+    // If regex got a small number but we found many bale codes, use the bale code count
+    if (regexBaleCount < 10 && balePositions.length > 10) {
+      numberOfBales = balePositions.length.toString()
+      console.log(`Using bale code count (${balePositions.length}) instead of regex match (${regexBaleCount})`)
+    } else {
+      numberOfBales = qtdFardosWithAvgMatch[1]
+    }
 
     // For each bale, extract the numbers that follow
     // G4 COTTON column order after bale code:
