@@ -7,7 +7,7 @@ import { Upload, FileText, Download, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
-import { processPDFs } from "@/lib/pdf-processor"
+import { processFiles } from "@/lib/pdf-processor"
 
 export default function PDFProcessorPage() {
   const [files, setFiles] = useState<File[]>([])
@@ -27,7 +27,7 @@ export default function PDFProcessorPage() {
 
   const handleProcess = async () => {
     if (files.length === 0) {
-      setError("Please select at least one PDF file")
+      setError("Por favor, selecione pelo menos um arquivo PDF ou Excel")
       return
     }
 
@@ -36,7 +36,7 @@ export default function PDFProcessorPage() {
     setProgress(0)
 
     try {
-      const result = await processPDFs(files, (current, total) => {
+      const result = await processFiles(files, (current, total) => {
         setProgress((current / total) * 100)
       })
 
@@ -77,10 +77,10 @@ export default function PDFProcessorPage() {
             <FileText className="h-8 w-8 text-primary" />
           </div>
           <h1 className="mb-3 text-balance text-4xl font-semibold tracking-tight text-foreground sm:text-5xl">
-            PDF Batch Processor
+            Processador de Lotes de Algodão
           </h1>
           <p className="text-pretty text-lg text-muted-foreground">
-            Extract batch data from multiple PDFs and generate Excel summaries
+            Extraia dados de PDFs e Excel e gere resumos em planilha
           </p>
         </div>
 
@@ -94,15 +94,15 @@ export default function PDFProcessorPage() {
               <Upload className="mb-4 h-12 w-12 text-muted-foreground transition-colors group-hover:text-primary" />
               <p className="mb-2 text-base font-medium text-foreground">
                 {files.length > 0
-                  ? `${files.length} file${files.length > 1 ? "s" : ""} selected`
-                  : "Click to upload PDFs"}
+                  ? `${files.length} arquivo${files.length > 1 ? "s" : ""} selecionado${files.length > 1 ? "s" : ""}`
+                  : "Clique para enviar PDFs ou Excel"}
               </p>
-              <p className="text-sm text-muted-foreground">Select multiple PDF files with the same structure</p>
+              <p className="text-sm text-muted-foreground">Selecione arquivos PDF ou Excel com dados de classificação de algodão</p>
               <input
                 id="file-upload"
                 type="file"
                 multiple
-                accept=".pdf"
+                accept=".pdf,.xlsx,.xls"
                 onChange={handleFileChange}
                 className="sr-only"
                 disabled={processing}
@@ -157,18 +157,18 @@ export default function PDFProcessorPage() {
                   {processing ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Processing...
+                      Processando...
                     </>
                   ) : (
                     <>
                       <FileText className="mr-2 h-4 w-4" />
-                      Process PDFs
+                      Processar Arquivos
                     </>
                   )}
                 </Button>
                 {files.length > 0 && (
                   <Button onClick={handleClear} variant="outline" disabled={processing} size="lg">
-                    Clear
+                    Limpar
                   </Button>
                 )}
               </>
@@ -176,10 +176,10 @@ export default function PDFProcessorPage() {
               <>
                 <Button onClick={handleDownload} className="flex-1" size="lg">
                   <Download className="mr-2 h-4 w-4" />
-                  Download Excel Summary
+                  Baixar Resumo Excel
                 </Button>
                 <Button onClick={handleClear} variant="outline" size="lg">
-                  Process New Files
+                  Processar Novos Arquivos
                 </Button>
               </>
             )}
@@ -188,32 +188,27 @@ export default function PDFProcessorPage() {
 
         {/* Info Section */}
         <div className="mt-12 rounded-xl border border-border bg-card/50 p-6">
-          <h3 className="mb-4 text-sm font-semibold text-foreground">What gets extracted:</h3>
+          <h3 className="mb-4 text-sm font-semibold text-foreground">O que é extraído:</h3>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <h4 className="mb-2 text-xs font-medium text-muted-foreground">From Header:</h4>
+              <h4 className="mb-2 text-xs font-medium text-muted-foreground">Do Cabeçalho:</h4>
               <ul className="space-y-1 text-sm text-foreground">
                 <li className="flex items-start gap-2">
                   <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
-                  Batch Number
+                  Número do Lote (Romaneio/Bloco)
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
+                  Peso Total
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
+                  Quantidade de Fardos
                 </li>
               </ul>
             </div>
             <div>
-              <h4 className="mb-2 text-xs font-medium text-muted-foreground">From Footer:</h4>
-              <ul className="space-y-1 text-sm text-foreground">
-                <li className="flex items-start gap-2">
-                  <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
-                  Batch Weight
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
-                  Number of Bales
-                </li>
-              </ul>
-            </div>
-            <div className="sm:col-span-2">
-              <h4 className="mb-2 text-xs font-medium text-muted-foreground">From Table (Min/Avg/Max):</h4>
+              <h4 className="mb-2 text-xs font-medium text-muted-foreground">Da Tabela (Min/Média/Max):</h4>
               <ul className="space-y-1 text-sm text-foreground">
                 <li className="flex items-start gap-2">
                   <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
@@ -221,11 +216,36 @@ export default function PDFProcessorPage() {
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
-                  Pol (Polarization)
+                  UHM (Comprimento - normalizado para polegadas)
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
-                  STR (Strength)
+                  STR (Resistência)
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
+                  SCI (quando disponível)
+                </li>
+              </ul>
+            </div>
+            <div className="sm:col-span-2">
+              <h4 className="mb-2 text-xs font-medium text-muted-foreground">Formatos Suportados:</h4>
+              <ul className="space-y-1 text-sm text-foreground">
+                <li className="flex items-start gap-2">
+                  <span className="mt-1 h-1.5 w-1.5 rounded-full bg-green-500" />
+                  PDF - Laudos de classificação (ABAPA, AGOPA, Minas Cotton, etc.)
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="mt-1 h-1.5 w-1.5 rounded-full bg-green-500" />
+                  Excel (.xlsx/.xls) - Planilhas de HVI com dados por fardo ou resumo
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="mt-1 h-1.5 w-1.5 rounded-full bg-blue-500" />
+                  Colunas em Português ou Inglês (detectadas automaticamente)
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="mt-1 h-1.5 w-1.5 rounded-full bg-blue-500" />
+                  UHM em mm ou polegadas (convertido automaticamente)
                 </li>
               </ul>
             </div>
