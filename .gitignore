@@ -41,3 +41,7 @@ yarn-error.log*
 next-env.d.ts
 
 .pdf/
+
+# JSON data files (keep directory structure)
+/data/json/*.json
+!/data/json/.gitkeep

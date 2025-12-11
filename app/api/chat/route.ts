@@ -3,7 +3,8 @@ import { promises as fs } from 'fs'
 import path from 'path'
 import OpenAI from 'openai'
 
-const JSON_DIR = path.join(process.cwd(), '..', 'json')
+// Directory to store JSON files (inside app directory for server deployment)
+const JSON_DIR = path.join(process.cwd(), 'data', 'json')
 
 // Initialize OpenAI client
 const openai = new OpenAI({
