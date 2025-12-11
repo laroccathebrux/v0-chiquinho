@@ -74,11 +74,12 @@ const COLUMN_ALIASES: Record<string, string[]> = {
     'numero fardo', 'n fardo'
   ],
 
-  // Lot/Batch - Lote/Bloco
+  // Lot/Batch - Lote/Bloco/Pilha
   lot: [
     'lote', 'lot', 'bloco', 'romaneio', 'batch', 'block', 'lote nº',
     'lote numero', 'lot no', 'lot #', 'lote #', 'n° lote', 'nº lote',
-    'lot number', 'batch number', 'batch no', 'take up', 'takeup'
+    'lot number', 'batch number', 'batch no', 'take up', 'takeup',
+    'pilha', 'pile', 'pilha/lote'
   ],
 
   // Bale count
@@ -233,6 +234,8 @@ function calculateStats(values: number[]): { min: number; avg: number; max: numb
 function extractBatchNumber(text: string, filename: string): string {
   // Try patterns in order of specificity
   const patterns = [
+    /Pilha\/Lote[:\s]*(\d+)/i,  // "Pilha/Lote: 1"
+    /Pilha[:\s]+(\d+)/i,        // "Pilha: 1"
     /Lote[:\s]+(\d+)/i,
     /Romaneio\s+(\d+)/i,        // Siagri format: "Romaneio 3"
     /Romaneio[:\s]+(\d+)/i,
@@ -709,10 +712,76 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
   let numberOfBales = "N/A"
   let batchWeight = "N/A"
 
+  // Try "Romaneio com HVI" format first (has summary at end with Mínimo, Média, Máximo)
+  // Format: Pilha/Lote: X - ... -Peso do Lote: XXXXX.X
+  const romaneioHVIMatch = fullText.match(/Romaneio\s+com\s+HVI/i)
+  const pilhaLoteMatch = fullText.match(/Pilha\/Lote[:\s]*(\d+)/i)
+  const pesoLoteMatch = fullText.match(/Peso\s+do\s+Lote\s*[;:]?\s*([\d.,]+)/i)
+
+  if (romaneioHVIMatch || (pilhaLoteMatch && fullText.includes('MIC') && fullText.includes('RES'))) {
+    console.log("Romaneio com HVI format detected")
+
+    // Extract lot number from "Pilha/Lote: X"
+    if (pilhaLoteMatch) {
+      // batchNumber is already set by extractBatchNumber, but override if we found Pilha/Lote
+    }
+
+    // Extract weight from "Peso do Lote: XXXXX.X"
+    if (pesoLoteMatch) {
+      batchWeight = pesoLoteMatch[1].replace(',', '.')
+    }
+
+    // Try to extract from summary lines (Mínimo, Média, Máximo at the end)
+    const minimoMatch = fullText.match(/Mínimo[^\d]*([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)/i)
+    const mediaMatch = fullText.match(/Média[^\d]*([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)/i)
+    const maximoMatch = fullText.match(/Máximo[^\d]*([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)/i)
+
+    // Column order in summary: UHM, LEN, MIC, UI, RES
+    if (mediaMatch) {
+      console.log("Found summary - Média:", mediaMatch.slice(1, 6))
+      const uhmAvg = parseNumericValue(mediaMatch[1])
+      const micAvg = parseNumericValue(mediaMatch[3])
+      const strAvg = parseNumericValue(mediaMatch[5])
+
+      const uhmMin = minimoMatch ? parseNumericValue(minimoMatch[1]) : uhmAvg
+      const uhmMax = maximoMatch ? parseNumericValue(maximoMatch[1]) : uhmAvg
+      const micMin = minimoMatch ? parseNumericValue(minimoMatch[3]) : micAvg
+      const micMax = maximoMatch ? parseNumericValue(maximoMatch[3]) : micAvg
+      const strMin = minimoMatch ? parseNumericValue(minimoMatch[5]) : strAvg
+      const strMax = maximoMatch ? parseNumericValue(maximoMatch[5]) : strAvg
+
+      // Count bales by counting bale codes
+      const baleCount = (fullText.match(/00\d{14,}/g) || []).length
+      numberOfBales = baleCount > 0 ? baleCount.toString() : "N/A"
+
+      // UHM values in this format are in mm (29-32), need to check
+      const normalizedUhmMin = normalizeUhmToInches(uhmMin)
+      const normalizedUhmAvg = normalizeUhmToInches(uhmAvg)
+      const normalizedUhmMax = normalizeUhmToInches(uhmMax)
+
+      return {
+        batchNumber,
+        batchWeight,
+        numberOfBales,
+        micMin: micMin,
+        micAvg: micAvg,
+        micMax: micMax,
+        uhmMin: normalizedUhmMin,
+        uhmAvg: normalizedUhmAvg,
+        uhmMax: normalizedUhmMax,
+        strMin: strMin,
+        strAvg: strAvg,
+        strMax: strMax,
+        sciAvg: null,
+        sourceFile: file.name,
+      }
+    }
+  }
+
   // Try Siagri format - look for "Qtd Fardos" followed by numbers
   // Format: Qtd Fardos 110 [values...]
   const siagriMatch = fullText.match(/Qtd\s*Fardos\s+(\d+)/i)
-  const isSiagriFormat = fullText.includes('Siagri') || fullText.includes('ALGODOEIRA') || fullText.includes('Romaneio')
+  const isSiagriFormat = fullText.includes('Siagri') || fullText.includes('ALGODOEIRA')
 
   if (siagriMatch && isSiagriFormat) {
     console.log("Siagri format detected")
