@@ -791,12 +791,21 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
   // Columns: Fardo | Líquido | Máq | Tipo | Área | UHM | Ui | Sfc | Res | Elg | Mic | Rd | +b | Csp | Leaf...
   // Summary line: "Qtd Fardos 110 0,52 1,14 82,22 9,15 30,37 6,42 4,12 76,85..."
   // Column order in summary: [1]Área [2]UHM [3]Ui [4]Sfc [5]Res [6]Elg [7]Mic...
-  const isG4CottonFormat = fullText.includes('G4 COTTON') ||
-    fullText.includes('Classificação do Lote de Plumas') ||
-    (fullText.includes('Romaneio') && fullText.match(/Fardo\s+Líquido\s+Máq\s+Tipo\s+Área\s+UHM/i))
+  const hasG4Cotton = fullText.includes('G4 COTTON')
+  const hasClassificacao = fullText.includes('Classificação do Lote de Plumas') || fullText.includes('Classificacao do Lote de Plumas')
+  const hasRomaneioHeader = fullText.includes('Romaneio') && fullText.match(/Fardo\s+L[ií]quido/i)
+  const isG4CottonFormat = hasG4Cotton || hasClassificacao || hasRomaneioHeader
 
-  // Match "Qtd Fardos 110" followed by averages
+  console.log(`G4 COTTON format check - hasG4Cotton: ${hasG4Cotton}, hasClassificacao: ${hasClassificacao}, hasRomaneioHeader: ${hasRomaneioHeader}`)
+
+  // Match "Qtd Fardos 110" followed by averages - more flexible pattern
+  // The numbers might be separated by various whitespace
   const qtdFardosWithAvgMatch = fullText.match(/Qtd\s*Fardos\s+(\d+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([\d,\.]+)/i)
+
+  console.log(`qtdFardosWithAvgMatch: ${qtdFardosWithAvgMatch ? 'found' : 'not found'}`)
+  if (qtdFardosWithAvgMatch) {
+    console.log(`Match groups: ${qtdFardosWithAvgMatch.slice(1, 9).join(', ')}`)
+  }
 
   if (isG4CottonFormat && qtdFardosWithAvgMatch) {
     console.log("G4 COTTON / Classificação do Lote de Plumas format detected")
@@ -891,6 +900,97 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
       strMax: strStats.max > 0 ? strStats.max : strAvg,
       sciAvg: null,
       sourceFile: file.name,
+    }
+  }
+
+  // If G4 COTTON format detected but no summary line found, try to parse bale data directly
+  if (isG4CottonFormat && !qtdFardosWithAvgMatch) {
+    console.log("G4 COTTON format detected but no summary line - parsing bale data directly")
+
+    // Get number of bales from "Qtd Fardos N" without the averages
+    const simpleQtdMatch = fullText.match(/Qtd\s*Fardos\s+(\d+)/i)
+    if (simpleQtdMatch) {
+      numberOfBales = simpleQtdMatch[1]
+    }
+
+    const micValues: number[] = []
+    const uhmValues: number[] = []
+    const strValues: number[] = []
+    const weightValues: number[] = []
+
+    // Extract all numbers from text after each bale code
+    const baleCodePattern = /00\d{14,}/g
+    let match
+    const balePositions: number[] = []
+
+    while ((match = baleCodePattern.exec(fullText)) !== null) {
+      balePositions.push(match.index + match[0].length)
+    }
+
+    console.log(`Found ${balePositions.length} bale codes for direct parsing`)
+
+    // For each bale, extract the numbers that follow
+    for (let i = 0; i < balePositions.length; i++) {
+      const startPos = balePositions[i]
+      const endPos = i < balePositions.length - 1 ? balePositions[i + 1] - 20 : startPos + 300
+      const segment = fullText.substring(startPos, endPos)
+
+      // Extract numbers from segment (skip tipo like "21-3")
+      const numbers = segment
+        .split(/\s+/)
+        .filter(s => !/^\d+-\d+$/.test(s)) // Skip tipo patterns like "21-3"
+        .map(s => s.replace(',', '.'))
+        .filter(s => /^-?\d+\.?\d*$/.test(s))
+        .map(s => parseFloat(s))
+        .filter(n => !isNaN(n))
+
+      if (numbers.length >= 8) {
+        const weight = numbers[0]
+        if (weight >= 150 && weight <= 300) {
+          weightValues.push(weight)
+        }
+
+        // UHM is typically ~1.08-1.20
+        const uhmCandidate = numbers.find((n, idx) => idx >= 2 && idx <= 5 && n >= 1.0 && n <= 1.35)
+        if (uhmCandidate) uhmValues.push(uhmCandidate)
+
+        // Res/STR is typically ~29-32
+        const strCandidate = numbers.find((n, idx) => idx >= 5 && idx <= 8 && n >= 28 && n <= 35)
+        if (strCandidate) strValues.push(strCandidate)
+
+        // Mic is typically ~4.0-4.5
+        const micCandidate = numbers.find((n, idx) => idx >= 7 && idx <= 10 && n >= 3.5 && n <= 5.5)
+        if (micCandidate) micValues.push(micCandidate)
+      }
+    }
+
+    console.log(`Direct parsing extracted: ${weightValues.length} weights, ${micValues.length} mic, ${uhmValues.length} uhm, ${strValues.length} str`)
+
+    if (micValues.length > 0 || uhmValues.length > 0 || strValues.length > 0) {
+      if (weightValues.length > 0) {
+        batchWeight = weightValues.reduce((a, b) => a + b, 0).toFixed(2)
+      }
+
+      const micStats = calculateStats(micValues)
+      const uhmStats = calculateStats(uhmValues)
+      const strStats = calculateStats(strValues)
+
+      return {
+        batchNumber,
+        batchWeight,
+        numberOfBales: numberOfBales !== "N/A" ? numberOfBales : balePositions.length.toString(),
+        micMin: micStats.min,
+        micAvg: micStats.avg,
+        micMax: micStats.max,
+        uhmMin: uhmStats.min,
+        uhmAvg: uhmStats.avg,
+        uhmMax: uhmStats.max,
+        strMin: strStats.min,
+        strAvg: strStats.avg,
+        strMax: strStats.max,
+        sciAvg: null,
+        sourceFile: file.name,
+      }
     }
   }
 
