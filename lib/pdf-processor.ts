@@ -563,7 +563,7 @@ async function extractDataFromExcel(file: File): Promise<BatchData[]> {
       }
 
       console.log(`Grouped into ${results.length} lots`)
-    } else if (hasBaleCountColumn && !firstCellIsBaleNumber && !hasLotColumn) {
+    } else if (hasBaleCountColumn && !firstCellIsLongBaleCode && !hasLotColumn) {
       // Summary sheet without lot column - each row is already a lot summary
       console.log('Processing as summary sheet')
 
