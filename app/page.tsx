@@ -555,10 +555,11 @@ export default function PDFProcessorPage() {
                             const range = maxValue - minValue
                             const useRangeScale = range > 0 && (range / maxValue) < 0.3
                             const colors = ['bg-blue-500', 'bg-green-500', 'bg-orange-500', 'bg-purple-500', 'bg-pink-500', 'bg-cyan-500']
+                            const maxBarHeight = 120 // pixels
 
                             return (
                               <>
-                                <div className="flex items-end justify-center gap-4 h-36">
+                                <div className="flex items-end justify-center gap-6" style={{ minHeight: '150px' }}>
                                   {msg.chartData!.labels.map((label, idx) => {
                                     const value = data[idx] || 0
                                     let heightPercent: number
@@ -567,15 +568,16 @@ export default function PDFProcessorPage() {
                                     } else {
                                       heightPercent = maxValue > 0 ? (value / maxValue) * 100 : 0
                                     }
+                                    const barHeight = Math.max((heightPercent / 100) * maxBarHeight, 20)
                                     return (
-                                      <div key={label} className="flex flex-col items-center gap-1" style={{ width: '48px' }}>
-                                        <span className="text-xs text-muted-foreground font-medium">{value.toFixed(1)}</span>
+                                      <div key={label} className="flex flex-col items-center gap-2" style={{ minWidth: '60px' }}>
+                                        <span className="text-sm text-muted-foreground font-medium">{value.toFixed(1)}</span>
                                         <div
-                                          className={`w-10 ${colors[idx % colors.length]} rounded-t`}
-                                          style={{ height: `${Math.max(heightPercent, 10)}%` }}
+                                          className={`w-12 ${colors[idx % colors.length]} rounded-t`}
+                                          style={{ height: `${barHeight}px` }}
                                         />
-                                        <span className="text-[9px] text-muted-foreground text-center truncate w-full" title={label}>
-                                          {label.length > 8 ? label.slice(0, 8) + '..' : label}
+                                        <span className="text-xs text-muted-foreground text-center truncate w-full" title={label}>
+                                          {label.length > 10 ? label.slice(0, 10) + '..' : label}
                                         </span>
                                       </div>
                                     )
