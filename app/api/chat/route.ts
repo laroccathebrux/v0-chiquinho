@@ -209,8 +209,17 @@ Se NÃO for pedido de gráfico, responda normalmente em texto sem JSON.`
 
     if (generateChart && storedData.allBatches.length > 0) {
       try {
-        // Try to extract JSON from response
-        const jsonMatch = rawResponse.match(/\{[\s\S]*\}/)
+        // Try to extract JSON from response - handle markdown code blocks too
+        let jsonString = rawResponse
+
+        // Remove markdown code blocks if present
+        const codeBlockMatch = rawResponse.match(/```(?:json)?\s*([\s\S]*?)```/)
+        if (codeBlockMatch) {
+          jsonString = codeBlockMatch[1].trim()
+        }
+
+        // Try to extract JSON object
+        const jsonMatch = jsonString.match(/\{[\s\S]*\}/)
         if (jsonMatch) {
           const parsed = JSON.parse(jsonMatch[0])
 

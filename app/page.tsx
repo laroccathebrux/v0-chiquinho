@@ -165,12 +165,21 @@ export default function PDFProcessorPage() {
     setChatLoading(true)
 
     try {
+      // Detect if user wants a chart/visualization
+      const msgLower = userMessage.toLowerCase()
+      const chartKeywords = [
+        'gráfico', 'grafico', 'chart', 'visuali', 'mostre', 'mostra',
+        'compare', 'compara', 'evolução', 'evolucao', 'tendência', 'tendencia',
+        'distribuição', 'distribuicao', 'pizza', 'barras', 'linha'
+      ]
+      const wantsChart = chartKeywords.some(keyword => msgLower.includes(keyword))
+
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: userMessage,
-          generateChart: userMessage.toLowerCase().includes('gráfico') || userMessage.toLowerCase().includes('grafico'),
+          generateChart: wantsChart,
           history: currentMessages
         })
       })
