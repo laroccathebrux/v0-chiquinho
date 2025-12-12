@@ -14,6 +14,7 @@ interface BatchData {
   strAvg: number
   strMax: number
   sciAvg: number | null
+  sfcAvg: number | null  // SFC/SFI - Short Fiber Content/Index
   sourceFile: string
   producerName: string | null
 }
@@ -573,6 +574,7 @@ async function extractDataFromExcel(file: File): Promise<BatchData[]> {
         uhmValues: number[]
         strValues: number[]
         sciValues: number[]
+        sfcValues: number[]
         weightValues: number[]
         baleCount: number
       }> = new Map()
@@ -589,6 +591,7 @@ async function extractDataFromExcel(file: File): Promise<BatchData[]> {
         const uhmValue = columnMap.uhm >= 0 ? parseNumericValue(row[columnMap.uhm]) : 0
         const strValue = columnMap.str >= 0 ? parseNumericValue(row[columnMap.str]) : 0
         const sciValue = columnMap.sci >= 0 ? parseNumericValue(row[columnMap.sci]) : 0
+        const sfcValue = columnMap.sfi >= 0 ? parseNumericValue(row[columnMap.sfi]) : 0
         const weightValue = columnMap.weight >= 0 ? parseNumericValue(row[columnMap.weight]) : 0
         const baleCountValue = columnMap.baleCount >= 0 ? parseNumericValue(row[columnMap.baleCount]) : 1
 
@@ -602,6 +605,7 @@ async function extractDataFromExcel(file: File): Promise<BatchData[]> {
             uhmValues: [],
             strValues: [],
             sciValues: [],
+            sfcValues: [],
             weightValues: [],
             baleCount: 0
           })
@@ -612,6 +616,7 @@ async function extractDataFromExcel(file: File): Promise<BatchData[]> {
         if (uhmValue > 0) lotData.uhmValues.push(uhmValue)
         if (strValue > 0) lotData.strValues.push(strValue)
         if (sciValue > 0) lotData.sciValues.push(sciValue)
+        if (sfcValue > 0) lotData.sfcValues.push(sfcValue)
         if (weightValue > 0) lotData.weightValues.push(weightValue)
         lotData.baleCount += baleCountValue || 1
       }
@@ -622,6 +627,7 @@ async function extractDataFromExcel(file: File): Promise<BatchData[]> {
         const uhmStats = calculateStats(lotData.uhmValues)
         const strStats = calculateStats(lotData.strValues)
         const sciStats = calculateStats(lotData.sciValues)
+        const sfcStats = calculateStats(lotData.sfcValues)
         const totalWeight = lotData.weightValues.reduce((a, b) => a + b, 0)
 
         results.push({
@@ -638,6 +644,7 @@ async function extractDataFromExcel(file: File): Promise<BatchData[]> {
           strAvg: strStats.avg,
           strMax: strStats.max,
           sciAvg: sciStats.avg > 0 ? sciStats.avg : null,
+          sfcAvg: sfcStats.avg > 0 ? sfcStats.avg : null,
           sourceFile: file.name,
           producerName: null, // Will be set after processing all sheets
         })
@@ -657,6 +664,7 @@ async function extractDataFromExcel(file: File): Promise<BatchData[]> {
         const uhmValue = columnMap.uhm >= 0 ? parseNumericValue(row[columnMap.uhm]) : 0
         const strValue = columnMap.str >= 0 ? parseNumericValue(row[columnMap.str]) : 0
         const sciValue = columnMap.sci >= 0 ? parseNumericValue(row[columnMap.sci]) : null
+        const sfcValue = columnMap.sfi >= 0 ? parseNumericValue(row[columnMap.sfi]) : null
         const weightValue = columnMap.weight >= 0 ? row[columnMap.weight]?.toString() : ''
         const baleCountValue = columnMap.baleCount >= 0 ? row[columnMap.baleCount]?.toString() : ''
 
@@ -679,6 +687,7 @@ async function extractDataFromExcel(file: File): Promise<BatchData[]> {
           strAvg: strValue,
           strMax: strValue,
           sciAvg: sciValue && sciValue > 0 ? sciValue : null,
+          sfcAvg: sfcValue && sfcValue > 0 ? sfcValue : null,
           sourceFile: file.name,
           producerName: null,
         })
@@ -691,6 +700,7 @@ async function extractDataFromExcel(file: File): Promise<BatchData[]> {
       const uhmValues: number[] = []
       const strValues: number[] = []
       const sciValues: number[] = []
+      const sfcValues: number[] = []
       const weightValues: number[] = []
       let lotNumber = ''
 
@@ -716,6 +726,10 @@ async function extractDataFromExcel(file: File): Promise<BatchData[]> {
           const val = parseNumericValue(row[columnMap.sci])
           if (val > 0) sciValues.push(val)
         }
+        if (columnMap.sfi >= 0) {
+          const val = parseNumericValue(row[columnMap.sfi])
+          if (val > 0) sfcValues.push(val)
+        }
         if (columnMap.weight >= 0) {
           const val = parseNumericValue(row[columnMap.weight])
           if (val > 0) weightValues.push(val)
@@ -732,6 +746,7 @@ async function extractDataFromExcel(file: File): Promise<BatchData[]> {
         const uhmStats = calculateStats(uhmValues)
         const strStats = calculateStats(strValues)
         const sciStats = calculateStats(sciValues)
+        const sfcStats = calculateStats(sfcValues)
         const totalWeight = weightValues.reduce((a, b) => a + b, 0)
 
         // Extract lot from sheet name if not found in data
@@ -752,6 +767,7 @@ async function extractDataFromExcel(file: File): Promise<BatchData[]> {
           strAvg: strStats.avg,
           strMax: strStats.max,
           sciAvg: sciStats.avg > 0 ? sciStats.avg : null,
+          sfcAvg: sfcStats.avg > 0 ? sfcStats.avg : null,
           sourceFile: `${file.name} [${sheetName}]`,
           producerName: null,
         })
@@ -910,6 +926,7 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
         strAvg: strAvg,
         strMax: strMax,
         sciAvg: sciAvgValue,
+        sfcAvg: null, // SFC not typically in this format
         sourceFile: file.name,
         producerName,
       }
@@ -954,15 +971,17 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
     // Extract averages from the summary line
     // Format: Qtd Fardos 110 [1]Área [2]UHM [3]Ui [4]Sfc [5]Res [6]Elg [7]Mic
     const uhmAvg = parseNumericValue(qtdFardosWithAvgMatch[3]) // UHM (1.14)
+    const sfcAvgFromSummary = parseNumericValue(qtdFardosWithAvgMatch[5]) // Sfc (9.15)
     const strAvg = parseNumericValue(qtdFardosWithAvgMatch[6]) // Res (30.37)
     const micAvg = parseNumericValue(qtdFardosWithAvgMatch[8]) // Mic (4.12)
 
-    console.log(`G4 COTTON averages - UHM: ${uhmAvg}, STR: ${strAvg}, MIC: ${micAvg}`)
+    console.log(`G4 COTTON averages - UHM: ${uhmAvg}, SFC: ${sfcAvgFromSummary}, STR: ${strAvg}, MIC: ${micAvg}`)
 
     // Parse individual bale data to get min/max values
     const micValues: number[] = []
     const uhmValues: number[] = []
     const strValues: number[] = []
+    const sfcValues: number[] = []
     const weightValues: number[] = []
     const sciValues: number[] = []
 
@@ -1024,6 +1043,10 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
         const micCandidate = numbers.find((n, idx) => idx >= 7 && idx <= 10 && n >= 3.5 && n <= 5.5)
         if (micCandidate) micValues.push(micCandidate)
 
+        // SFC is typically at index 5 or 6 - value ~6-12 range
+        const sfcCandidate = numbers.find((n, idx) => idx >= 4 && idx <= 7 && n >= 5 && n <= 15)
+        if (sfcCandidate) sfcValues.push(sfcCandidate)
+
         // SCI is the last value in the row (typically 85-88 range for G4 COTTON)
         // It's a 2-digit integer at the end of the row (e.g., 86.00, 85.00, 87.00, 88.00)
         // Looking for values in 84-92 range at the end of the numbers array
@@ -1042,7 +1065,7 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
       }
     }
 
-    console.log(`Extracted: ${weightValues.length} weights, ${micValues.length} mic, ${uhmValues.length} uhm, ${strValues.length} str, ${sciValues.length} sci`)
+    console.log(`Extracted: ${weightValues.length} weights, ${micValues.length} mic, ${uhmValues.length} uhm, ${strValues.length} str, ${sfcValues.length} sfc, ${sciValues.length} sci`)
 
     // Calculate totals
     if (weightValues.length > 0) {
@@ -1053,11 +1076,14 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
     const micStats = calculateStats(micValues)
     const uhmStats = calculateStats(uhmValues)
     const strStats = calculateStats(strValues)
+    const sfcStats = calculateStats(sfcValues)
     const sciStats = calculateStats(sciValues)
 
     // Calculate SCI average from individual bale values
     g4CottonSciAvg = sciStats.avg > 0 ? sciStats.avg : null
-    console.log(`G4 COTTON SCI average: ${g4CottonSciAvg}`)
+    // Use summary SFC if available, otherwise calculate from bales
+    const g4CottonSfcAvg = sfcAvgFromSummary > 0 ? sfcAvgFromSummary : (sfcStats.avg > 0 ? sfcStats.avg : null)
+    console.log(`G4 COTTON SCI average: ${g4CottonSciAvg}, SFC average: ${g4CottonSfcAvg}`)
 
     return {
       batchNumber,
@@ -1073,6 +1099,7 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
       strAvg: strAvg > 0 ? strAvg : strStats.avg,
       strMax: strStats.max > 0 ? strStats.max : strAvg,
       sciAvg: g4CottonSciAvg,
+      sfcAvg: g4CottonSfcAvg,
       sourceFile: file.name,
       producerName,
     }
@@ -1088,6 +1115,7 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
     const micValues: number[] = []
     const uhmValues: number[] = []
     const strValues: number[] = []
+    const sfcValues: number[] = []
     const weightValues: number[] = []
     const sciValues: number[] = []
 
@@ -1141,6 +1169,10 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
         const micCandidate = numbers.find((n, idx) => idx >= 7 && idx <= 10 && n >= 3.5 && n <= 5.5)
         if (micCandidate) micValues.push(micCandidate)
 
+        // SFC is typically at index 5 or 6 - value ~6-12 range
+        const sfcCandidate = numbers.find((n, idx) => idx >= 4 && idx <= 7 && n >= 5 && n <= 15)
+        if (sfcCandidate) sfcValues.push(sfcCandidate)
+
         // SCI is the last value in the row (typically 85-88 range for G4 COTTON)
         // Look at the last few values to find SCI
         for (let idx = numbers.length - 1; idx >= Math.max(0, numbers.length - 8); idx--) {
@@ -1154,7 +1186,7 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
       }
     }
 
-    console.log(`Direct parsing extracted: ${weightValues.length} weights, ${micValues.length} mic, ${uhmValues.length} uhm, ${strValues.length} str, ${sciValues.length} sci`)
+    console.log(`Direct parsing extracted: ${weightValues.length} weights, ${micValues.length} mic, ${uhmValues.length} uhm, ${strValues.length} str, ${sfcValues.length} sfc, ${sciValues.length} sci`)
 
     if (micValues.length > 0 || uhmValues.length > 0 || strValues.length > 0) {
       if (weightValues.length > 0) {
@@ -1164,6 +1196,7 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
       const micStats = calculateStats(micValues)
       const uhmStats = calculateStats(uhmValues)
       const strStats = calculateStats(strValues)
+      const sfcStats = calculateStats(sfcValues)
       const sciStats = calculateStats(sciValues)
 
       return {
@@ -1180,6 +1213,7 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
         strAvg: strStats.avg,
         strMax: strStats.max,
         sciAvg: sciStats.avg > 0 ? sciStats.avg : null,
+        sfcAvg: sfcStats.avg > 0 ? sfcStats.avg : null,
         sourceFile: file.name,
         producerName,
       }
@@ -1202,6 +1236,7 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
     const micValues: number[] = []
     const uhmValues: number[] = []
     const strValues: number[] = []
+    const sfcValues: number[] = []
     const weightValues: number[] = []
 
     // Extract all numbers from text after each bale code
@@ -1259,10 +1294,14 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
         // Find Micron value (typically 4.0-5.0 range)
         const micCandidate = numbers.find((n, idx) => idx >= 9 && n >= 3.5 && n <= 5.5)
         if (micCandidate) micValues.push(micCandidate)
+
+        // Find FC/SFC value (typically 6-14 range, at position 7)
+        const sfcCandidate = numbers.find((n, idx) => idx >= 6 && idx <= 8 && n >= 5 && n <= 15)
+        if (sfcCandidate) sfcValues.push(sfcCandidate)
       }
     }
 
-    console.log(`Extracted: ${weightValues.length} weights, ${micValues.length} mic, ${uhmValues.length} uhm, ${strValues.length} str`)
+    console.log(`Extracted: ${weightValues.length} weights, ${micValues.length} mic, ${uhmValues.length} uhm, ${strValues.length} str, ${sfcValues.length} sfc`)
 
     // Calculate totals and stats
     if (weightValues.length > 0) {
@@ -1273,6 +1312,7 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
       const micStats = calculateStats(micValues)
       const uhmStats = calculateStats(uhmValues)
       const strStats = calculateStats(strValues)
+      const sfcStats = calculateStats(sfcValues)
 
       return {
         batchNumber,
@@ -1288,6 +1328,7 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
         strAvg: strStats.avg,
         strMax: strStats.max,
         sciAvg: null,
+        sfcAvg: sfcStats.avg > 0 ? sfcStats.avg : null,
         sourceFile: file.name,
         producerName,
       }
@@ -1458,6 +1499,7 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
     strAvg: stats.str.avg,
     strMax: stats.str.max,
     sciAvg: stats.sci.avg > 0 ? stats.sci.avg : null,
+    sfcAvg: null, // SFC not extracted from generic PDF format
     sourceFile: file.name,
     producerName,
   }
@@ -1469,8 +1511,9 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
 async function generateExcel(data: BatchData[]): Promise<Blob> {
   const XLSX = await getXLSX()
 
-  // Check if any row has SCI data
+  // Check if any row has SCI or SFC data
   const hasSCI = data.some(row => row.sciAvg !== null && row.sciAvg > 0)
+  const hasSFC = data.some(row => row.sfcAvg !== null && row.sfcAvg > 0)
 
   // Build headers
   const headers = [
@@ -1490,6 +1533,10 @@ async function generateExcel(data: BatchData[]): Promise<Blob> {
 
   if (hasSCI) {
     headers.push("SCI (média)")
+  }
+
+  if (hasSFC) {
+    headers.push("SFC (média)")
   }
 
   headers.push("Arquivo Origem")
@@ -1515,6 +1562,10 @@ async function generateExcel(data: BatchData[]): Promise<Blob> {
 
       if (hasSCI) {
         rowData.push(row.sciAvg !== null && row.sciAvg > 0 ? row.sciAvg.toFixed(1) : "N/A")
+      }
+
+      if (hasSFC) {
+        rowData.push(row.sfcAvg !== null && row.sfcAvg > 0 ? row.sfcAvg.toFixed(1) : "N/A")
       }
 
       rowData.push(row.sourceFile)
@@ -1543,6 +1594,10 @@ async function generateExcel(data: BatchData[]): Promise<Blob> {
   ]
 
   if (hasSCI) {
+    colWidths.push({ wch: 12 })
+  }
+
+  if (hasSFC) {
     colWidths.push({ wch: 12 })
   }
 

@@ -15,6 +15,7 @@ interface BatchData {
   strAvg: number
   strMax: number
   sciAvg: number | null
+  sfcAvg: number | null  // SFC/SFI - Short Fiber Content/Index
   sourceFile: string
   producerName: string | null
   processedAt?: string
