@@ -1,20 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { promises as fs } from 'fs'
-import path from 'path'
 
-// Directory to store JSON files (inside app directory for server deployment)
-const JSON_DIR = path.join(process.cwd(), 'data', 'json')
-
-// Ensure the JSON directory exists
-async function ensureJsonDir() {
-  try {
-    await fs.access(JSON_DIR)
-  } catch {
-    await fs.mkdir(JSON_DIR, { recursive: true })
-  }
+// In-memory storage for serverless environment (Vercel doesn't allow filesystem writes)
+// Note: This is ephemeral - data persists only during the lambda lifecycle
+// For production, consider using Vercel KV, Supabase, or another database
+const memoryStorage: {
+  files: StoredFile[]
+  summaries: Summary[]
+} = {
+  files: [],
+  summaries: []
 }
 
-// Generate a unique filename based on content hash
+// Generate a unique ID based on content hash
 function generateFileHash(content: string): string {
   let hash = 0
   for (let i = 0; i < content.length; i++) {
@@ -58,42 +55,22 @@ export interface Summary {
   data: BatchData[]
 }
 
-// GET - Retrieve all stored data
+// GET - Retrieve all stored data from memory
 export async function GET() {
   try {
-    await ensureJsonDir()
-
-    const files = await fs.readdir(JSON_DIR)
-    const jsonFiles = files.filter(f => f.endsWith('.json'))
-
-    const allData: { files: StoredFile[], summaries: Summary[] } = {
-      files: [],
-      summaries: []
-    }
-
-    for (const file of jsonFiles) {
-      const content = await fs.readFile(path.join(JSON_DIR, file), 'utf-8')
-      const parsed = JSON.parse(content)
-
-      if (file.startsWith('summary_')) {
-        allData.summaries.push(parsed)
-      } else {
-        allData.files.push(parsed)
-      }
-    }
-
-    return NextResponse.json(allData)
+    return NextResponse.json({
+      files: memoryStorage.files,
+      summaries: memoryStorage.summaries
+    })
   } catch (error) {
     console.error('Error reading data:', error)
     return NextResponse.json({ error: 'Failed to read data' }, { status: 500 })
   }
 }
 
-// POST - Save processed data
+// POST - Save processed data to memory
 export async function POST(request: NextRequest) {
   try {
-    await ensureJsonDir()
-
     const body = await request.json()
     const { type, data, filename } = body
 
@@ -107,29 +84,20 @@ export async function POST(request: NextRequest) {
       }
 
       // Check if file already exists (by filename)
-      const existingFiles = await fs.readdir(JSON_DIR)
-      const existingFile = existingFiles.find(f => {
-        if (!f.endsWith('.json') || f.startsWith('summary_')) return false
-        try {
-          const content = JSON.parse(
-            require('fs').readFileSync(path.join(JSON_DIR, f), 'utf-8')
-          )
-          return content.filename === filename
-        } catch {
-          return false
-        }
-      })
+      const existingIndex = memoryStorage.files.findIndex(f => f.filename === filename)
 
-      const targetFilename = existingFile || `file_${fileData.id}.json`
-      await fs.writeFile(
-        path.join(JSON_DIR, targetFilename),
-        JSON.stringify(fileData, null, 2)
-      )
+      if (existingIndex >= 0) {
+        // Update existing
+        memoryStorage.files[existingIndex] = fileData
+      } else {
+        // Add new
+        memoryStorage.files.push(fileData)
+      }
 
       return NextResponse.json({
         success: true,
         id: fileData.id,
-        isNew: !existingFile
+        isNew: existingIndex < 0
       })
 
     } else if (type === 'summary') {
@@ -142,11 +110,7 @@ export async function POST(request: NextRequest) {
         data: data.data || data
       }
 
-      const summaryFilename = `summary_${summaryData.id}.json`
-      await fs.writeFile(
-        path.join(JSON_DIR, summaryFilename),
-        JSON.stringify(summaryData, null, 2)
-      )
+      memoryStorage.summaries.push(summaryData)
 
       return NextResponse.json({
         success: true,

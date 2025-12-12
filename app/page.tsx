@@ -105,25 +105,25 @@ export default function PDFProcessorPage() {
 
     setSaving(true)
     try {
-      // Save summary data
-      const response = await fetch('/api/data', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'summary',
-          data: {
-            files: files.map(f => f.name),
-            totalBatches: processedBatches.length,
-            data: processedBatches
-          }
-        })
-      })
+      // Save to localStorage for persistence in browser
+      const existingData = localStorage.getItem('cottonBatchData')
+      const existing: BatchData[] = existingData ? JSON.parse(existingData) : []
 
-      if (response.ok) {
-        setSaved(true)
-      } else {
-        throw new Error('Failed to save data')
+      // Merge new data with existing, avoiding duplicates by batchNumber + sourceFile
+      const newData = [...existing]
+      for (const batch of processedBatches) {
+        const existingIndex = newData.findIndex(
+          b => b.batchNumber === batch.batchNumber && b.sourceFile === batch.sourceFile
+        )
+        if (existingIndex >= 0) {
+          newData[existingIndex] = batch
+        } else {
+          newData.push(batch)
+        }
       }
+
+      localStorage.setItem('cottonBatchData', JSON.stringify(newData))
+      setSaved(true)
     } catch (err) {
       setError('Erro ao salvar dados: ' + (err instanceof Error ? err.message : 'Erro desconhecido'))
     } finally {
@@ -174,13 +174,18 @@ export default function PDFProcessorPage() {
       ]
       const wantsChart = chartKeywords.some(keyword => msgLower.includes(keyword))
 
+      // Load batch data from localStorage to send to chat API
+      const storedBatchData = localStorage.getItem('cottonBatchData')
+      const batchData: BatchData[] = storedBatchData ? JSON.parse(storedBatchData) : []
+
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: userMessage,
           generateChart: wantsChart,
-          history: currentMessages
+          history: currentMessages,
+          batchData
         })
       })
 

@@ -1,10 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { promises as fs } from "fs"
-import path from "path"
 import OpenAI from "openai"
-
-// Directory to store JSON files (inside app directory for server deployment)
-const JSON_DIR = path.join(process.cwd(), "data", "json")
 
 interface BatchData {
   batchNumber: string
@@ -22,41 +17,6 @@ interface BatchData {
   sciAvg: number | null
   sourceFile: string
   processedAt?: string
-}
-
-// Load all stored data
-async function loadAllData(): Promise<{ files: unknown[]; summaries: unknown[]; allBatches: BatchData[] }> {
-  try {
-    await fs.access(JSON_DIR)
-  } catch {
-    return { files: [], summaries: [], allBatches: [] }
-  }
-
-  const files = await fs.readdir(JSON_DIR)
-  const jsonFiles = files.filter((f) => f.endsWith(".json"))
-
-  const storedFiles: unknown[] = []
-  const summaries: unknown[] = []
-  const allBatches: BatchData[] = []
-
-  for (const file of jsonFiles) {
-    const content = await fs.readFile(path.join(JSON_DIR, file), "utf-8")
-    const parsed = JSON.parse(content)
-
-    if (file.startsWith("summary_")) {
-      summaries.push(parsed)
-      if (parsed.data && Array.isArray(parsed.data)) {
-        allBatches.push(...parsed.data)
-      }
-    } else {
-      storedFiles.push(parsed)
-      if (parsed.data && Array.isArray(parsed.data)) {
-        allBatches.push(...parsed.data)
-      }
-    }
-  }
-
-  return { files: storedFiles, summaries, allBatches }
 }
 
 // Create context about the data for the AI
@@ -122,7 +82,7 @@ interface ChatMessage {
 
 export async function POST(request: NextRequest) {
   try {
-    const { message, generateChart, history } = await request.json()
+    const { message, generateChart, history, batchData } = await request.json()
 
     if (!message) {
       return NextResponse.json({ error: "Message is required" }, { status: 400 })
@@ -133,8 +93,9 @@ export async function POST(request: NextRequest) {
       apiKey: process.env.OPENAI_API_KEY,
     })
 
-    // Load all stored data
-    const storedData = await loadAllData()
+    // Use batch data from frontend (passed from localStorage/state)
+    const allBatches: BatchData[] = batchData || []
+    const storedData = { files: [], summaries: [], allBatches }
     const dataContext = createDataContext(storedData)
 
     // System prompt for the AI
