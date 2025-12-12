@@ -16,6 +16,7 @@ interface BatchData {
   strMax: number
   sciAvg: number | null
   sourceFile: string
+  producerName: string | null
   processedAt?: string
 }
 
@@ -27,10 +28,10 @@ function createDataContext(data: { files: unknown[]; summaries: unknown[]; allBa
     return "Não há dados de algodão armazenados no momento."
   }
 
-  // Group by source file (producer)
+  // Group by producer name (if available) or source file
   const byProducer: Record<string, BatchData[]> = {}
   for (const batch of allBatches) {
-    const producer = batch.sourceFile || "Desconhecido"
+    const producer = batch.producerName || batch.sourceFile || "Desconhecido"
     if (!byProducer[producer]) {
       byProducer[producer] = []
     }
@@ -211,9 +212,10 @@ Se NÃO for pedido de gráfico, responda normalmente em texto sem JSON.`
             let filteredBatches = storedData.allBatches
             if (filterProducers.length > 0) {
               filteredBatches = storedData.allBatches.filter(batch => {
-                const producerName = batch.sourceFile.replace(".pdf", "").replace(".xlsx", "").toLowerCase()
+                // Use producerName if available, otherwise fall back to sourceFile
+                const batchProducerName = (batch.producerName || batch.sourceFile.replace(".pdf", "").replace(".xlsx", "")).toLowerCase()
                 return filterProducers.some(fp =>
-                  producerName.includes(fp.toLowerCase()) || fp.toLowerCase().includes(producerName)
+                  batchProducerName.includes(fp.toLowerCase()) || fp.toLowerCase().includes(batchProducerName)
                 )
               })
             }
@@ -254,7 +256,7 @@ Se NÃO for pedido de gráfico, responda normalmente em texto sem JSON.`
               }> = {}
 
               for (const batch of filteredBatches) {
-                const producer = batch.sourceFile.replace(".pdf", "").replace(".xlsx", "")
+                const producer = batch.producerName || batch.sourceFile.replace(".pdf", "").replace(".xlsx", "")
                 if (!byProducer[producer]) {
                   byProducer[producer] = {
                     strSum: 0, strCount: 0,

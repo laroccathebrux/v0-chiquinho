@@ -15,6 +15,7 @@ interface BatchData {
   strMax: number
   sciAvg: number | null
   sourceFile: string
+  producerName: string | null
 }
 
 // Comprehensive column name mappings for PT/EN
@@ -226,6 +227,66 @@ function calculateStats(values: number[]): { min: number; avg: number; max: numb
     avg: validValues.reduce((a, b) => a + b, 0) / validValues.length,
     max: Math.max(...validValues),
   }
+}
+
+/**
+ * Extract producer/client name from text or filename
+ */
+function extractProducerName(text: string, filename: string): string | null {
+  // Try to extract from text content first
+  const producerPatterns = [
+    // Portuguese patterns
+    /Cliente[:\s]+([A-Za-zÀ-ÿ\s\.\-&]+?)(?:\s*[-–|]|\s{2,}|$)/im,
+    /Produtor[:\s]+([A-Za-zÀ-ÿ\s\.\-&]+?)(?:\s*[-–|]|\s{2,}|$)/im,
+    /Fazenda[:\s]+([A-Za-zÀ-ÿ\s\.\-&]+?)(?:\s*[-–|]|\s{2,}|$)/im,
+    /Propriedade[:\s]+([A-Za-zÀ-ÿ\s\.\-&]+?)(?:\s*[-–|]|\s{2,}|$)/im,
+    /Fornecedor[:\s]+([A-Za-zÀ-ÿ\s\.\-&]+?)(?:\s*[-–|]|\s{2,}|$)/im,
+    // English patterns
+    /Client[:\s]+([A-Za-zÀ-ÿ\s\.\-&]+?)(?:\s*[-–|]|\s{2,}|$)/im,
+    /Producer[:\s]+([A-Za-zÀ-ÿ\s\.\-&]+?)(?:\s*[-–|]|\s{2,}|$)/im,
+    /Farm[:\s]+([A-Za-zÀ-ÿ\s\.\-&]+?)(?:\s*[-–|]|\s{2,}|$)/im,
+    /Supplier[:\s]+([A-Za-zÀ-ÿ\s\.\-&]+?)(?:\s*[-–|]|\s{2,}|$)/im,
+    // Common company formats in headers
+    /^([A-Z][A-Za-zÀ-ÿ\s\.\-&]{2,}(?:LTDA|S\.?A\.?|ME|EPP|EIRELI)?)\s*[-–]/m,
+    // G4 COTTON specific
+    /G4\s*COTTON/i,
+  ]
+
+  for (const pattern of producerPatterns) {
+    const match = text.match(pattern)
+    if (match) {
+      let name = match[1] ? match[1].trim() : match[0].trim()
+      // Clean up the name
+      name = name
+        .replace(/\s+/g, ' ')
+        .replace(/[-–|]+$/, '')
+        .trim()
+      // Skip if too short or looks like a label
+      if (name.length > 2 && !['Cliente', 'Produtor', 'Fazenda', 'Client', 'Producer', 'Farm'].includes(name)) {
+        return name
+      }
+    }
+  }
+
+  // Try to extract from filename
+  // Remove extension and common prefixes/suffixes
+  let nameFromFile = filename
+    .replace(/\.[^.]+$/, '') // Remove extension
+    .replace(/^(blc|lote|lot|batch|romaneio)[_\s-]*\d*/i, '') // Remove common prefixes
+    .replace(/[_-]/g, ' ')
+    .trim()
+
+  // If filename has meaningful content (not just numbers)
+  if (nameFromFile && !/^\d+$/.test(nameFromFile) && nameFromFile.length > 2) {
+    // Capitalize first letter of each word
+    nameFromFile = nameFromFile
+      .split(' ')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ')
+    return nameFromFile
+  }
+
+  return null
 }
 
 /**
@@ -578,6 +639,7 @@ async function extractDataFromExcel(file: File): Promise<BatchData[]> {
           strMax: strStats.max,
           sciAvg: sciStats.avg > 0 ? sciStats.avg : null,
           sourceFile: file.name,
+          producerName: null, // Will be set after processing all sheets
         })
       }
 
@@ -618,6 +680,7 @@ async function extractDataFromExcel(file: File): Promise<BatchData[]> {
           strMax: strValue,
           sciAvg: sciValue && sciValue > 0 ? sciValue : null,
           sourceFile: file.name,
+          producerName: null,
         })
       }
     } else {
@@ -690,8 +753,25 @@ async function extractDataFromExcel(file: File): Promise<BatchData[]> {
           strMax: strStats.max,
           sciAvg: sciStats.avg > 0 ? sciStats.avg : null,
           sourceFile: `${file.name} [${sheetName}]`,
+          producerName: null,
         })
       }
+    }
+  }
+
+  // Try to extract producer name from file content or filename
+  // For Excel, we need to look at the raw data for producer info
+  if (results.length > 0) {
+    // Try to find producer in first few rows of first sheet
+    const firstSheet = workbook.Sheets[workbook.SheetNames[0]]
+    const rawData: any[][] = XLSX.utils.sheet_to_json(firstSheet, { header: 1 })
+    const headerText = rawData.slice(0, 10).map(row =>
+      row ? row.map((cell: any) => cell?.toString() || '').join(' ') : ''
+    ).join('\n')
+
+    const producerName = extractProducerName(headerText, file.name)
+    if (producerName) {
+      results.forEach(r => r.producerName = producerName)
     }
   }
 
@@ -723,6 +803,10 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
 
   // Extract batch number
   const batchNumber = extractBatchNumber(fullText, file.name)
+
+  // Extract producer name
+  const producerName = extractProducerName(fullText, file.name)
+  console.log("Extracted producer name:", producerName)
 
   // Extract bales count and weight
   let numberOfBales = "N/A"
@@ -827,6 +911,7 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
         strMax: strMax,
         sciAvg: sciAvgValue,
         sourceFile: file.name,
+        producerName,
       }
     }
   }
@@ -989,6 +1074,7 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
       strMax: strStats.max > 0 ? strStats.max : strAvg,
       sciAvg: g4CottonSciAvg,
       sourceFile: file.name,
+      producerName,
     }
   }
 
@@ -1095,6 +1181,7 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
         strMax: strStats.max,
         sciAvg: sciStats.avg > 0 ? sciStats.avg : null,
         sourceFile: file.name,
+        producerName,
       }
     }
   }
@@ -1202,6 +1289,7 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
         strMax: strStats.max,
         sciAvg: null,
         sourceFile: file.name,
+        producerName,
       }
     }
   }
@@ -1371,6 +1459,7 @@ async function extractDataFromPDF(file: File): Promise<BatchData> {
     strMax: stats.str.max,
     sciAvg: stats.sci.avg > 0 ? stats.sci.avg : null,
     sourceFile: file.name,
+    producerName,
   }
 }
 

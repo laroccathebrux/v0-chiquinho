@@ -37,6 +37,7 @@ export interface BatchData {
   strMax: number
   sciAvg: number | null
   sourceFile: string
+  producerName: string | null
   processedAt?: string
 }
 
