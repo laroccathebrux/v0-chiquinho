@@ -123,16 +123,24 @@ Quando o usuário pedir para gerar um gráfico, comparar visualmente, ou qualque
   "chart": {
     "type": "bar|line|pie|horizontalBar",
     "title": "Título do gráfico",
-    "metric": "str|sci|mic|uhm",
-    "comparison": "producers|batches|single"
+    "metric": "str|sci|mic|uhm|bales",
+    "comparison": "producers|batches",
+    "producers": ["nome1", "nome2"]
   }
 }
 
+Campos do chart:
+- "type": tipo de gráfico (bar, horizontalBar, line, pie)
+- "title": título descritivo do gráfico
+- "metric": métrica a exibir (str, sci, mic, uhm, bales)
+- "comparison": agrupar por "producers" ou "batches"
+- "producers": lista de nomes de produtores/arquivos a incluir. Use [] vazio para incluir TODOS. Se o usuário mencionar produtores específicos, liste apenas esses.
+
 Escolha o tipo de gráfico mais adequado:
-- "bar": comparar valores entre categorias (ex: STR por produtor)
+- "bar": comparar poucos valores (até 6 itens)
 - "horizontalBar": quando há muitos itens para comparar ou nomes longos
-- "line": mostrar tendências ou evolução
-- "pie": mostrar proporções/distribuição (ex: % de fardos por produtor)
+- "line": mostrar tendências ou evolução por lote
+- "pie": mostrar proporções/distribuição
 
 Se NÃO for pedido de gráfico, responda normalmente em texto sem JSON.`
 
@@ -193,34 +201,46 @@ Se NÃO for pedido de gráfico, responda normalmente em texto sem JSON.`
             const chartType = chartConfig.type || "bar"
             const title = chartConfig.title || "Comparativo"
             const comparison = chartConfig.comparison || "producers"
+            const filterProducers: string[] = chartConfig.producers || []
 
             let labels: string[] = []
             let data: number[] = []
             let metricLabel = ""
 
+            // Filter batches by producer if specified
+            let filteredBatches = storedData.allBatches
+            if (filterProducers.length > 0) {
+              filteredBatches = storedData.allBatches.filter(batch => {
+                const producerName = batch.sourceFile.replace(".pdf", "").replace(".xlsx", "").toLowerCase()
+                return filterProducers.some(fp =>
+                  producerName.includes(fp.toLowerCase()) || fp.toLowerCase().includes(producerName)
+                )
+              })
+            }
+
             if (comparison === "batches") {
               // Show individual batches (for evolution/trend charts)
-              labels = storedData.allBatches.map(b => `Lote ${b.batchNumber}`)
+              labels = filteredBatches.map(b => `Lote ${b.batchNumber}`)
 
               switch (metric) {
                 case "str":
-                  data = storedData.allBatches.map(b => b.strAvg)
+                  data = filteredBatches.map(b => b.strAvg)
                   metricLabel = "STR (gf/tex)"
                   break
                 case "sci":
-                  data = storedData.allBatches.map(b => b.sciAvg || 0)
+                  data = filteredBatches.map(b => b.sciAvg || 0)
                   metricLabel = "SCI"
                   break
                 case "mic":
-                  data = storedData.allBatches.map(b => b.micAvg)
+                  data = filteredBatches.map(b => b.micAvg)
                   metricLabel = "Mic"
                   break
                 case "uhm":
-                  data = storedData.allBatches.map(b => b.uhmAvg)
+                  data = filteredBatches.map(b => b.uhmAvg)
                   metricLabel = "UHM (pol)"
                   break
                 default:
-                  data = storedData.allBatches.map(b => b.strAvg)
+                  data = filteredBatches.map(b => b.strAvg)
                   metricLabel = "STR (gf/tex)"
               }
             } else {
@@ -233,7 +253,7 @@ Se NÃO for pedido de gráfico, responda normalmente em texto sem JSON.`
                 baleCount: number;
               }> = {}
 
-              for (const batch of storedData.allBatches) {
+              for (const batch of filteredBatches) {
                 const producer = batch.sourceFile.replace(".pdf", "").replace(".xlsx", "")
                 if (!byProducer[producer]) {
                   byProducer[producer] = {
