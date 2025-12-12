@@ -155,9 +155,25 @@ ${dataContext}
 Responda sempre em português brasileiro. Seja preciso com os números e cite os dados específicos quando relevante.
 
 IMPORTANTE sobre gráficos:
-- Quando o usuário pedir para gerar um gráfico ou comparar visualmente, responda APENAS com uma frase curta como "Aqui está o gráfico comparativo de [métrica] por produtor:" ou similar.
-- NÃO liste os dados numéricos quando for gerar gráfico, pois o gráfico já mostrará essas informações visualmente.
-- Seja breve e direto quando houver gráfico.`
+Quando o usuário pedir para gerar um gráfico, comparar visualmente, ou qualquer visualização de dados:
+1. Responda em formato JSON VÁLIDO com a seguinte estrutura (sem texto adicional antes ou depois):
+{
+  "message": "Sua mensagem curta aqui",
+  "chart": {
+    "type": "bar|line|pie|horizontalBar",
+    "title": "Título do gráfico",
+    "metric": "str|sci|mic|uhm",
+    "comparison": "producers|batches|single"
+  }
+}
+
+Escolha o tipo de gráfico mais adequado:
+- "bar": comparar valores entre categorias (ex: STR por produtor)
+- "horizontalBar": quando há muitos itens para comparar ou nomes longos
+- "line": mostrar tendências ou evolução
+- "pie": mostrar proporções/distribuição (ex: % de fardos por produtor)
+
+Se NÃO for pedido de gráfico, responda normalmente em texto sem JSON.`
 
     // Prepare messages for OpenAI - include conversation history
     const messages: OpenAI.ChatCompletionMessageParam[] = [
@@ -185,75 +201,105 @@ IMPORTANTE sobre gráficos:
       max_tokens: 1000,
     })
 
-    const assistantMessage = completion.choices[0]?.message?.content || "Desculpe, não consegui processar sua pergunta."
+    const rawResponse = completion.choices[0]?.message?.content || "Desculpe, não consegui processar sua pergunta."
 
-    // If chart generation is requested, prepare chart data
+    // Try to parse AI response as JSON (for chart requests)
+    let assistantMessage = rawResponse
     let chartData = null
+
     if (generateChart && storedData.allBatches.length > 0) {
-      // Detect which metric the user wants to compare
-      const msgLower = message.toLowerCase()
-      let metric: "str" | "sci" | "mic" | "uhm" = "str" // default
-      let metricLabel = "STR Médio (gf/tex)"
+      try {
+        // Try to extract JSON from response
+        const jsonMatch = rawResponse.match(/\{[\s\S]*\}/)
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0])
 
-      if (msgLower.includes("sci") || msgLower.includes("spinning") || msgLower.includes("consistência") || msgLower.includes("consistencia")) {
-        metric = "sci"
-        metricLabel = "SCI Médio"
-      } else if (msgLower.includes("mic") || msgLower.includes("micronaire") || msgLower.includes("finura")) {
-        metric = "mic"
-        metricLabel = "Mic Médio"
-      } else if (msgLower.includes("uhm") || msgLower.includes("comprimento") || msgLower.includes("length")) {
-        metric = "uhm"
-        metricLabel = "UHM Médio (pol)"
-      } else if (msgLower.includes("str") || msgLower.includes("resistência") || msgLower.includes("resistencia") || msgLower.includes("strength")) {
-        metric = "str"
-        metricLabel = "STR Médio (gf/tex)"
-      }
+          if (parsed.chart && parsed.message) {
+            assistantMessage = parsed.message
+            const chartConfig = parsed.chart
 
-      // Group by producer for chart
-      const byProducer: Record<string, { sum: number; count: number; sciSum: number; sciCount: number }> = {}
+            // Build chart data based on AI's recommendation
+            const metric = chartConfig.metric || "str"
+            const chartType = chartConfig.type || "bar"
+            const title = chartConfig.title || "Comparativo"
+            const comparison = chartConfig.comparison || "producers"
 
-      for (const batch of storedData.allBatches) {
-        const producer = batch.sourceFile.replace(".pdf", "").replace(".xlsx", "")
-        if (!byProducer[producer]) {
-          byProducer[producer] = { sum: 0, count: 0, sciSum: 0, sciCount: 0 }
-        }
+            if (comparison === "producers") {
+              // Group by producer
+              const byProducer: Record<string, {
+                strSum: number; strCount: number;
+                sciSum: number; sciCount: number;
+                micSum: number; micCount: number;
+                uhmSum: number; uhmCount: number;
+                baleCount: number;
+              }> = {}
 
-        // Add the requested metric
-        if (metric === "str") {
-          byProducer[producer].sum += batch.strAvg
-          byProducer[producer].count++
-        } else if (metric === "mic") {
-          byProducer[producer].sum += batch.micAvg
-          byProducer[producer].count++
-        } else if (metric === "uhm") {
-          byProducer[producer].sum += batch.uhmAvg
-          byProducer[producer].count++
-        } else if (metric === "sci") {
-          if (batch.sciAvg !== null && batch.sciAvg > 0) {
-            byProducer[producer].sciSum += batch.sciAvg
-            byProducer[producer].sciCount++
+              for (const batch of storedData.allBatches) {
+                const producer = batch.sourceFile.replace(".pdf", "").replace(".xlsx", "")
+                if (!byProducer[producer]) {
+                  byProducer[producer] = {
+                    strSum: 0, strCount: 0,
+                    sciSum: 0, sciCount: 0,
+                    micSum: 0, micCount: 0,
+                    uhmSum: 0, uhmCount: 0,
+                    baleCount: 0
+                  }
+                }
+                byProducer[producer].strSum += batch.strAvg
+                byProducer[producer].strCount++
+                byProducer[producer].micSum += batch.micAvg
+                byProducer[producer].micCount++
+                byProducer[producer].uhmSum += batch.uhmAvg
+                byProducer[producer].uhmCount++
+                byProducer[producer].baleCount += parseInt(batch.numberOfBales) || 0
+                if (batch.sciAvg !== null && batch.sciAvg > 0) {
+                  byProducer[producer].sciSum += batch.sciAvg
+                  byProducer[producer].sciCount++
+                }
+              }
+
+              const labels = Object.keys(byProducer)
+              let data: number[] = []
+              let metricLabel = ""
+
+              switch (metric) {
+                case "str":
+                  data = labels.map(p => byProducer[p].strCount > 0 ? byProducer[p].strSum / byProducer[p].strCount : 0)
+                  metricLabel = "STR Médio (gf/tex)"
+                  break
+                case "sci":
+                  data = labels.map(p => byProducer[p].sciCount > 0 ? byProducer[p].sciSum / byProducer[p].sciCount : 0)
+                  metricLabel = "SCI Médio"
+                  break
+                case "mic":
+                  data = labels.map(p => byProducer[p].micCount > 0 ? byProducer[p].micSum / byProducer[p].micCount : 0)
+                  metricLabel = "Mic Médio"
+                  break
+                case "uhm":
+                  data = labels.map(p => byProducer[p].uhmCount > 0 ? byProducer[p].uhmSum / byProducer[p].uhmCount : 0)
+                  metricLabel = "UHM Médio (pol)"
+                  break
+                case "bales":
+                  data = labels.map(p => byProducer[p].baleCount)
+                  metricLabel = "Quantidade de Fardos"
+                  break
+                default:
+                  data = labels.map(p => byProducer[p].strCount > 0 ? byProducer[p].strSum / byProducer[p].strCount : 0)
+                  metricLabel = "STR Médio (gf/tex)"
+              }
+
+              chartData = {
+                type: chartType,
+                title,
+                labels,
+                datasets: [{ label: metricLabel, data }],
+              }
+            }
           }
         }
-      }
-
-      // Build chart data with single metric
-      const labels = Object.keys(byProducer)
-      const data = labels.map((producer) => {
-        const p = byProducer[producer]
-        if (metric === "sci") {
-          return p.sciCount > 0 ? p.sciSum / p.sciCount : 0
-        }
-        return p.count > 0 ? p.sum / p.count : 0
-      })
-
-      chartData = {
-        labels,
-        datasets: [
-          {
-            label: metricLabel,
-            data,
-          },
-        ],
+      } catch {
+        // If JSON parsing fails, keep the raw message and no chart
+        assistantMessage = rawResponse
       }
     }
 

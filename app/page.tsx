@@ -27,6 +27,8 @@ interface BatchData {
 }
 
 interface ChartDataType {
+  type: 'bar' | 'horizontalBar' | 'pie' | 'line'
+  title: string
   labels: string[]
   datasets: { label: string; data: number[] }[]
 }
@@ -472,31 +474,174 @@ export default function PDFProcessorPage() {
                       <div className="flex items-center gap-2 mb-3">
                         <BarChart3 className="h-4 w-4 text-primary" />
                         <span className="text-sm font-medium text-foreground">
-                          {msg.chartData.datasets[0].label}
+                          {msg.chartData.title || msg.chartData.datasets[0].label}
                         </span>
                       </div>
-                      <div className="space-y-2">
-                        {msg.chartData.labels.map((label, labelIndex) => {
-                          const value = msg.chartData!.datasets[0].data[labelIndex] || 0
-                          const maxValue = Math.max(...msg.chartData!.datasets[0].data.filter(v => v > 0))
-                          const percentage = maxValue > 0 ? (value / maxValue) * 100 : 0
-                          return (
-                            <div key={label} className="flex items-center gap-2">
-                              <div className="w-24 text-xs text-foreground truncate" title={label}>
-                                {label.length > 15 ? label.slice(0, 15) + '...' : label}
+
+                      {/* Pie Chart */}
+                      {msg.chartData.type === 'pie' && (
+                        <div className="space-y-2">
+                          {(() => {
+                            const total = msg.chartData!.datasets[0].data.reduce((a, b) => a + b, 0)
+                            const colors = ['bg-blue-500', 'bg-green-500', 'bg-orange-500', 'bg-purple-500', 'bg-pink-500', 'bg-cyan-500']
+                            return msg.chartData!.labels.map((label, idx) => {
+                              const value = msg.chartData!.datasets[0].data[idx] || 0
+                              const percent = total > 0 ? (value / total) * 100 : 0
+                              return (
+                                <div key={label} className="flex items-center gap-2">
+                                  <div className={`w-3 h-3 rounded-full ${colors[idx % colors.length]}`} />
+                                  <div className="flex-1 text-xs text-foreground truncate" title={label}>
+                                    {label}
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {percent.toFixed(1)}%
+                                  </div>
+                                  <div className="w-16 text-xs text-right font-medium text-foreground">
+                                    {value.toFixed(1)}
+                                  </div>
+                                </div>
+                              )
+                            })
+                          })()}
+                          <div className="flex flex-wrap gap-2 mt-3 pt-2 border-t border-border">
+                            {(() => {
+                              const total = msg.chartData!.datasets[0].data.reduce((a, b) => a + b, 0)
+                              const colors = ['bg-blue-500', 'bg-green-500', 'bg-orange-500', 'bg-purple-500', 'bg-pink-500', 'bg-cyan-500']
+                              let cumulativePercent = 0
+                              return (
+                                <div className="w-full h-6 rounded-full overflow-hidden flex">
+                                  {msg.chartData!.labels.map((label, idx) => {
+                                    const value = msg.chartData!.datasets[0].data[idx] || 0
+                                    const percent = total > 0 ? (value / total) * 100 : 0
+                                    cumulativePercent += percent
+                                    return (
+                                      <div
+                                        key={label}
+                                        className={`h-full ${colors[idx % colors.length]}`}
+                                        style={{ width: `${percent}%` }}
+                                        title={`${label}: ${percent.toFixed(1)}%`}
+                                      />
+                                    )
+                                  })}
+                                </div>
+                              )
+                            })()}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Bar Chart (vertical) */}
+                      {msg.chartData.type === 'bar' && (
+                        <div className="space-y-1">
+                          <div className="flex items-end gap-1 h-32">
+                            {msg.chartData.labels.map((label, idx) => {
+                              const value = msg.chartData!.datasets[0].data[idx] || 0
+                              const maxValue = Math.max(...msg.chartData!.datasets[0].data.filter(v => v > 0))
+                              const heightPercent = maxValue > 0 ? (value / maxValue) * 100 : 0
+                              const colors = ['bg-blue-500', 'bg-green-500', 'bg-orange-500', 'bg-purple-500', 'bg-pink-500', 'bg-cyan-500']
+                              return (
+                                <div key={label} className="flex-1 flex flex-col items-center gap-1">
+                                  <span className="text-[10px] text-muted-foreground">{value.toFixed(1)}</span>
+                                  <div
+                                    className={`w-full ${colors[idx % colors.length]} rounded-t transition-all`}
+                                    style={{ height: `${heightPercent}%`, minHeight: '4px' }}
+                                  />
+                                </div>
+                              )
+                            })}
+                          </div>
+                          <div className="flex gap-1">
+                            {msg.chartData.labels.map((label) => (
+                              <div key={label} className="flex-1 text-[9px] text-center text-muted-foreground truncate" title={label}>
+                                {label.length > 8 ? label.slice(0, 8) + '..' : label}
                               </div>
-                              <div className="flex-1 h-5 bg-muted-foreground/20 rounded overflow-hidden">
-                                <div
-                                  className="h-full bg-primary rounded transition-all"
-                                  style={{ width: `${percentage}%` }}
-                                />
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Horizontal Bar Chart */}
+                      {(msg.chartData.type === 'horizontalBar' || !msg.chartData.type) && (
+                        <div className="space-y-2">
+                          {msg.chartData.labels.map((label, labelIndex) => {
+                            const value = msg.chartData!.datasets[0].data[labelIndex] || 0
+                            const maxValue = Math.max(...msg.chartData!.datasets[0].data.filter(v => v > 0))
+                            const percentage = maxValue > 0 ? (value / maxValue) * 100 : 0
+                            return (
+                              <div key={label} className="flex items-center gap-2">
+                                <div className="w-24 text-xs text-foreground truncate" title={label}>
+                                  {label.length > 15 ? label.slice(0, 15) + '...' : label}
+                                </div>
+                                <div className="flex-1 h-5 bg-muted-foreground/20 rounded overflow-hidden">
+                                  <div
+                                    className="h-full bg-primary rounded transition-all"
+                                    style={{ width: `${percentage}%` }}
+                                  />
+                                </div>
+                                <div className="w-12 text-xs text-right font-medium text-foreground">
+                                  {value.toFixed(1)}
+                                </div>
                               </div>
-                              <div className="w-12 text-xs text-right font-medium text-foreground">
-                                {value.toFixed(1)}
+                            )
+                          })}
+                        </div>
+                      )}
+
+                      {/* Line Chart */}
+                      {msg.chartData.type === 'line' && (
+                        <div className="space-y-2">
+                          <div className="relative h-32 flex items-end">
+                            <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+                              {(() => {
+                                const data = msg.chartData!.datasets[0].data
+                                const maxValue = Math.max(...data.filter(v => v > 0))
+                                const minValue = Math.min(...data.filter(v => v > 0))
+                                const range = maxValue - minValue || 1
+                                const points = data.map((value, idx) => {
+                                  const x = (idx / (data.length - 1)) * 100
+                                  const y = 100 - ((value - minValue) / range) * 80 - 10
+                                  return `${x},${y}`
+                                }).join(' ')
+                                return (
+                                  <>
+                                    <polyline
+                                      fill="none"
+                                      stroke="currentColor"
+                                      strokeWidth="2"
+                                      className="text-primary"
+                                      points={points}
+                                    />
+                                    {data.map((value, idx) => {
+                                      const x = (idx / (data.length - 1)) * 100
+                                      const y = 100 - ((value - minValue) / range) * 80 - 10
+                                      return (
+                                        <circle
+                                          key={idx}
+                                          cx={x}
+                                          cy={y}
+                                          r="3"
+                                          className="fill-primary"
+                                        />
+                                      )
+                                    })}
+                                  </>
+                                )
+                              })()}
+                            </svg>
+                          </div>
+                          <div className="flex justify-between">
+                            {msg.chartData.labels.map((label) => (
+                              <div key={label} className="text-[9px] text-muted-foreground truncate" title={label}>
+                                {label.length > 6 ? label.slice(0, 6) + '..' : label}
                               </div>
-                            </div>
-                          )
-                        })}
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Legend */}
+                      <div className="mt-3 pt-2 border-t border-border">
+                        <span className="text-[10px] text-muted-foreground">{msg.chartData.datasets[0].label}</span>
                       </div>
                     </div>
                   </div>
