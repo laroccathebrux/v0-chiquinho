@@ -542,27 +542,42 @@ export default function PDFProcessorPage() {
                       {/* Bar Chart (vertical) */}
                       {msg.chartData.type === 'bar' && (
                         <div className="space-y-1">
-                          <div className="flex items-end gap-1 h-32">
-                            {msg.chartData.labels.map((label, idx) => {
-                              const value = msg.chartData!.datasets[0].data[idx] || 0
-                              const maxValue = Math.max(...msg.chartData!.datasets[0].data.filter(v => v > 0))
-                              const heightPercent = maxValue > 0 ? (value / maxValue) * 100 : 0
-                              const colors = ['bg-blue-500', 'bg-green-500', 'bg-orange-500', 'bg-purple-500', 'bg-pink-500', 'bg-cyan-500']
-                              return (
-                                <div key={label} className="flex-1 flex flex-col items-center gap-1">
-                                  <span className="text-[10px] text-muted-foreground">{value.toFixed(1)}</span>
-                                  <div
-                                    className={`w-full ${colors[idx % colors.length]} rounded-t transition-all`}
-                                    style={{ height: `${heightPercent}%`, minHeight: '4px' }}
-                                  />
-                                </div>
-                              )
-                            })}
+                          <div className="flex items-end gap-2 h-40 px-2">
+                            {(() => {
+                              const data = msg.chartData!.datasets[0].data
+                              const validData = data.filter(v => v > 0)
+                              const maxValue = Math.max(...validData)
+                              const minValue = Math.min(...validData)
+                              const range = maxValue - minValue
+                              // Use range-based scaling for similar values, absolute for different values
+                              const useRangeScale = range > 0 && (range / maxValue) < 0.3
+                              const colors = ['bg-blue-500', 'bg-green-500', 'bg-orange-500', 'bg-purple-500', 'bg-pink-500', 'bg-cyan-500', 'bg-red-500', 'bg-yellow-500', 'bg-indigo-500', 'bg-teal-500']
+
+                              return msg.chartData!.labels.map((label, idx) => {
+                                const value = data[idx] || 0
+                                let heightPercent: number
+                                if (useRangeScale && range > 0) {
+                                  // Scale based on range: min value gets 20%, max gets 100%
+                                  heightPercent = 20 + ((value - minValue) / range) * 80
+                                } else {
+                                  heightPercent = maxValue > 0 ? (value / maxValue) * 100 : 0
+                                }
+                                return (
+                                  <div key={label} className="flex-1 flex flex-col items-center gap-1 min-w-0">
+                                    <span className="text-[10px] text-muted-foreground font-medium">{value.toFixed(1)}</span>
+                                    <div
+                                      className={`w-full max-w-[40px] ${colors[idx % colors.length]} rounded-t transition-all`}
+                                      style={{ height: `${heightPercent}%`, minHeight: '8px' }}
+                                    />
+                                  </div>
+                                )
+                              })
+                            })()}
                           </div>
-                          <div className="flex gap-1">
+                          <div className="flex gap-2 px-2">
                             {msg.chartData.labels.map((label) => (
-                              <div key={label} className="flex-1 text-[9px] text-center text-muted-foreground truncate" title={label}>
-                                {label.length > 8 ? label.slice(0, 8) + '..' : label}
+                              <div key={label} className="flex-1 text-[8px] text-center text-muted-foreground truncate min-w-0" title={label}>
+                                {label.length > 10 ? label.slice(0, 10) + '..' : label}
                               </div>
                             ))}
                           </div>
@@ -572,27 +587,42 @@ export default function PDFProcessorPage() {
                       {/* Horizontal Bar Chart */}
                       {(msg.chartData.type === 'horizontalBar' || !msg.chartData.type) && (
                         <div className="space-y-2">
-                          {msg.chartData.labels.map((label, labelIndex) => {
-                            const value = msg.chartData!.datasets[0].data[labelIndex] || 0
-                            const maxValue = Math.max(...msg.chartData!.datasets[0].data.filter(v => v > 0))
-                            const percentage = maxValue > 0 ? (value / maxValue) * 100 : 0
-                            return (
-                              <div key={label} className="flex items-center gap-2">
-                                <div className="w-24 text-xs text-foreground truncate" title={label}>
-                                  {label.length > 15 ? label.slice(0, 15) + '...' : label}
+                          {(() => {
+                            const data = msg.chartData!.datasets[0].data
+                            const validData = data.filter(v => v > 0)
+                            const maxValue = Math.max(...validData)
+                            const minValue = Math.min(...validData)
+                            const range = maxValue - minValue
+                            // Use range-based scaling for similar values
+                            const useRangeScale = range > 0 && (range / maxValue) < 0.3
+
+                            return msg.chartData!.labels.map((label, labelIndex) => {
+                              const value = data[labelIndex] || 0
+                              let percentage: number
+                              if (useRangeScale && range > 0) {
+                                // Scale based on range: min value gets 20%, max gets 100%
+                                percentage = 20 + ((value - minValue) / range) * 80
+                              } else {
+                                percentage = maxValue > 0 ? (value / maxValue) * 100 : 0
+                              }
+                              return (
+                                <div key={label} className="flex items-center gap-2">
+                                  <div className="w-28 text-xs text-foreground truncate" title={label}>
+                                    {label.length > 18 ? label.slice(0, 18) + '...' : label}
+                                  </div>
+                                  <div className="flex-1 h-6 bg-muted-foreground/20 rounded overflow-hidden">
+                                    <div
+                                      className="h-full bg-primary rounded transition-all"
+                                      style={{ width: `${percentage}%`, minWidth: '8px' }}
+                                    />
+                                  </div>
+                                  <div className="w-14 text-xs text-right font-medium text-foreground">
+                                    {value.toFixed(1)}
+                                  </div>
                                 </div>
-                                <div className="flex-1 h-5 bg-muted-foreground/20 rounded overflow-hidden">
-                                  <div
-                                    className="h-full bg-primary rounded transition-all"
-                                    style={{ width: `${percentage}%` }}
-                                  />
-                                </div>
-                                <div className="w-12 text-xs text-right font-medium text-foreground">
-                                  {value.toFixed(1)}
-                                </div>
-                              </div>
-                            )
-                          })}
+                              )
+                            })
+                          })()}
                         </div>
                       )}
 
