@@ -153,7 +153,11 @@ Dados disponíveis no sistema:
 ${dataContext}
 
 Responda sempre em português brasileiro. Seja preciso com os números e cite os dados específicos quando relevante.
-Se o usuário pedir para gerar um gráfico, responda com os dados e indique que o gráfico será exibido.`
+
+IMPORTANTE sobre gráficos:
+- Quando o usuário pedir para gerar um gráfico ou comparar visualmente, responda APENAS com uma frase curta como "Aqui está o gráfico comparativo de [métrica] por produtor:" ou similar.
+- NÃO liste os dados numéricos quando for gerar gráfico, pois o gráfico já mostrará essas informações visualmente.
+- Seja breve e direto quando houver gráfico.`
 
     // Prepare messages for OpenAI - include conversation history
     const messages: OpenAI.ChatCompletionMessageParam[] = [
@@ -186,36 +190,68 @@ Se o usuário pedir para gerar um gráfico, responda com os dados e indique que 
     // If chart generation is requested, prepare chart data
     let chartData = null
     if (generateChart && storedData.allBatches.length > 0) {
+      // Detect which metric the user wants to compare
+      const msgLower = message.toLowerCase()
+      let metric: "str" | "sci" | "mic" | "uhm" = "str" // default
+      let metricLabel = "STR Médio (gf/tex)"
+
+      if (msgLower.includes("sci") || msgLower.includes("spinning") || msgLower.includes("consistência") || msgLower.includes("consistencia")) {
+        metric = "sci"
+        metricLabel = "SCI Médio"
+      } else if (msgLower.includes("mic") || msgLower.includes("micronaire") || msgLower.includes("finura")) {
+        metric = "mic"
+        metricLabel = "Mic Médio"
+      } else if (msgLower.includes("uhm") || msgLower.includes("comprimento") || msgLower.includes("length")) {
+        metric = "uhm"
+        metricLabel = "UHM Médio (pol)"
+      } else if (msgLower.includes("str") || msgLower.includes("resistência") || msgLower.includes("resistencia") || msgLower.includes("strength")) {
+        metric = "str"
+        metricLabel = "STR Médio (gf/tex)"
+      }
+
       // Group by producer for chart
-      const byProducer: Record<string, { avgSci: number; avgMic: number; avgStr: number; count: number }> = {}
+      const byProducer: Record<string, { sum: number; count: number; sciSum: number; sciCount: number }> = {}
 
       for (const batch of storedData.allBatches) {
         const producer = batch.sourceFile.replace(".pdf", "").replace(".xlsx", "")
         if (!byProducer[producer]) {
-          byProducer[producer] = { avgSci: 0, avgMic: 0, avgStr: 0, count: 0 }
+          byProducer[producer] = { sum: 0, count: 0, sciSum: 0, sciCount: 0 }
         }
-        byProducer[producer].avgMic += batch.micAvg
-        byProducer[producer].avgStr += batch.strAvg
-        if (batch.sciAvg !== null && batch.sciAvg > 0) {
-          byProducer[producer].avgSci += batch.sciAvg
+
+        // Add the requested metric
+        if (metric === "str") {
+          byProducer[producer].sum += batch.strAvg
+          byProducer[producer].count++
+        } else if (metric === "mic") {
+          byProducer[producer].sum += batch.micAvg
+          byProducer[producer].count++
+        } else if (metric === "uhm") {
+          byProducer[producer].sum += batch.uhmAvg
+          byProducer[producer].count++
+        } else if (metric === "sci") {
+          if (batch.sciAvg !== null && batch.sciAvg > 0) {
+            byProducer[producer].sciSum += batch.sciAvg
+            byProducer[producer].sciCount++
+          }
         }
-        byProducer[producer].count++
       }
 
+      // Build chart data with single metric
+      const labels = Object.keys(byProducer)
+      const data = labels.map((producer) => {
+        const p = byProducer[producer]
+        if (metric === "sci") {
+          return p.sciCount > 0 ? p.sciSum / p.sciCount : 0
+        }
+        return p.count > 0 ? p.sum / p.count : 0
+      })
+
       chartData = {
-        labels: Object.keys(byProducer),
+        labels,
         datasets: [
           {
-            label: "SCI Médio",
-            data: Object.values(byProducer).map((p) => p.avgSci / p.count || 0),
-          },
-          {
-            label: "Mic Médio",
-            data: Object.values(byProducer).map((p) => p.avgMic / p.count),
-          },
-          {
-            label: "STR Médio",
-            data: Object.values(byProducer).map((p) => p.avgStr / p.count),
+            label: metricLabel,
+            data,
           },
         ],
       }
