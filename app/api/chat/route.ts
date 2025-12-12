@@ -115,9 +115,14 @@ function createDataContext(data: { files: unknown[]; summaries: unknown[]; allBa
   return context
 }
 
+interface ChatMessage {
+  role: "user" | "assistant"
+  content: string
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const { message, generateChart } = await request.json()
+    const { message, generateChart, history } = await request.json()
 
     if (!message) {
       return NextResponse.json({ error: "Message is required" }, { status: 400 })
@@ -148,13 +153,25 @@ Dados disponíveis no sistema:
 ${dataContext}
 
 Responda sempre em português brasileiro. Seja preciso com os números e cite os dados específicos quando relevante.
-Se o usuário pedir para gerar um gráfico, você pode indicar que vai gerar um gráfico e fornecer os dados necessários.`
+Se o usuário pedir para gerar um gráfico, responda com os dados e indique que o gráfico será exibido.`
 
-    // Prepare messages for OpenAI
+    // Prepare messages for OpenAI - include conversation history
     const messages: OpenAI.ChatCompletionMessageParam[] = [
       { role: "system", content: systemPrompt },
-      { role: "user", content: message },
     ]
+
+    // Add conversation history if provided
+    if (history && Array.isArray(history)) {
+      for (const msg of history as ChatMessage[]) {
+        messages.push({
+          role: msg.role,
+          content: msg.content,
+        })
+      }
+    }
+
+    // Add current message
+    messages.push({ role: "user", content: message })
 
     // Call OpenAI API
     const completion = await openai.chat.completions.create({

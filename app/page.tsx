@@ -46,6 +46,10 @@ export default function PDFProcessorPage() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [chatInput, setChatInput] = useState('')
   const [chatLoading, setChatLoading] = useState(false)
+  const [chartData, setChartData] = useState<{
+    labels: string[]
+    datasets: { label: string; data: number[] }[]
+  } | null>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
 
   // Scroll chat to bottom when new messages arrive
@@ -150,6 +154,9 @@ export default function PDFProcessorPage() {
 
     const userMessage = chatInput.trim()
     setChatInput('')
+
+    // Keep current messages to send as history
+    const currentMessages = [...chatMessages]
     setChatMessages(prev => [...prev, { role: 'user', content: userMessage }])
     setChatLoading(true)
 
@@ -159,7 +166,8 @@ export default function PDFProcessorPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: userMessage,
-          generateChart: userMessage.toLowerCase().includes('gráfico') || userMessage.toLowerCase().includes('grafico')
+          generateChart: userMessage.toLowerCase().includes('gráfico') || userMessage.toLowerCase().includes('grafico'),
+          history: currentMessages
         })
       })
 
@@ -170,6 +178,11 @@ export default function PDFProcessorPage() {
       }
 
       setChatMessages(prev => [...prev, { role: 'assistant', content: data.message }])
+
+      // Set chart data if returned
+      if (data.chartData) {
+        setChartData(data.chartData)
+      }
     } catch (err) {
       setChatMessages(prev => [...prev, {
         role: 'assistant',
@@ -455,6 +468,63 @@ export default function PDFProcessorPage() {
               <div className="flex justify-start">
                 <div className="bg-muted rounded-lg px-4 py-2">
                   <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                </div>
+              </div>
+            )}
+            {/* Chart Display */}
+            {chartData && (
+              <div className="bg-muted rounded-lg p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <BarChart3 className="h-4 w-4 text-primary" />
+                  <span className="text-sm font-medium text-foreground">Comparativo por Produtor</span>
+                  <button
+                    onClick={() => setChartData(null)}
+                    className="ml-auto text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="space-y-3">
+                  {chartData.labels.map((label, labelIndex) => (
+                    <div key={label} className="space-y-1">
+                      <div className="text-xs font-medium text-foreground truncate" title={label}>
+                        {label.length > 20 ? label.slice(0, 20) + '...' : label}
+                      </div>
+                      {chartData.datasets.map((dataset, datasetIndex) => {
+                        const value = dataset.data[labelIndex] || 0
+                        const maxValue = Math.max(...dataset.data.filter(v => v > 0))
+                        const percentage = maxValue > 0 ? (value / maxValue) * 100 : 0
+                        const colors = ['bg-blue-500', 'bg-green-500', 'bg-orange-500']
+                        return (
+                          <div key={dataset.label} className="flex items-center gap-2">
+                            <div className="w-12 text-[10px] text-muted-foreground truncate" title={dataset.label}>
+                              {dataset.label.replace(' Médio', '')}
+                            </div>
+                            <div className="flex-1 h-3 bg-muted-foreground/20 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full ${colors[datasetIndex % colors.length]} rounded-full transition-all`}
+                                style={{ width: `${percentage}%` }}
+                              />
+                            </div>
+                            <div className="w-10 text-[10px] text-right text-muted-foreground">
+                              {value.toFixed(1)}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-3 mt-3 pt-2 border-t border-border">
+                  {chartData.datasets.map((dataset, index) => {
+                    const colors = ['bg-blue-500', 'bg-green-500', 'bg-orange-500']
+                    return (
+                      <div key={dataset.label} className="flex items-center gap-1">
+                        <div className={`w-2 h-2 rounded-full ${colors[index % colors.length]}`} />
+                        <span className="text-[10px] text-muted-foreground">{dataset.label}</span>
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             )}
