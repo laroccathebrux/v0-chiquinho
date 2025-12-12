@@ -224,8 +224,37 @@ Se NÃO for pedido de gráfico, responda normalmente em texto sem JSON.`
             const title = chartConfig.title || "Comparativo"
             const comparison = chartConfig.comparison || "producers"
 
-            if (comparison === "producers") {
-              // Group by producer
+            let labels: string[] = []
+            let data: number[] = []
+            let metricLabel = ""
+
+            if (comparison === "batches") {
+              // Show individual batches (for evolution/trend charts)
+              labels = storedData.allBatches.map(b => `Lote ${b.batchNumber}`)
+
+              switch (metric) {
+                case "str":
+                  data = storedData.allBatches.map(b => b.strAvg)
+                  metricLabel = "STR (gf/tex)"
+                  break
+                case "sci":
+                  data = storedData.allBatches.map(b => b.sciAvg || 0)
+                  metricLabel = "SCI"
+                  break
+                case "mic":
+                  data = storedData.allBatches.map(b => b.micAvg)
+                  metricLabel = "Mic"
+                  break
+                case "uhm":
+                  data = storedData.allBatches.map(b => b.uhmAvg)
+                  metricLabel = "UHM (pol)"
+                  break
+                default:
+                  data = storedData.allBatches.map(b => b.strAvg)
+                  metricLabel = "STR (gf/tex)"
+              }
+            } else {
+              // Group by producer (default)
               const byProducer: Record<string, {
                 strSum: number; strCount: number;
                 sciSum: number; sciCount: number;
@@ -258,9 +287,7 @@ Se NÃO for pedido de gráfico, responda normalmente em texto sem JSON.`
                 }
               }
 
-              const labels = Object.keys(byProducer)
-              let data: number[] = []
-              let metricLabel = ""
+              labels = Object.keys(byProducer)
 
               switch (metric) {
                 case "str":
@@ -287,13 +314,13 @@ Se NÃO for pedido de gráfico, responda normalmente em texto sem JSON.`
                   data = labels.map(p => byProducer[p].strCount > 0 ? byProducer[p].strSum / byProducer[p].strCount : 0)
                   metricLabel = "STR Médio (gf/tex)"
               }
+            }
 
-              chartData = {
-                type: chartType,
-                title,
-                labels,
-                datasets: [{ label: metricLabel, data }],
-              }
+            chartData = {
+              type: chartType,
+              title,
+              labels,
+              datasets: [{ label: metricLabel, data }],
             }
           }
         }
